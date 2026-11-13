@@ -24,8 +24,9 @@
 - Lịch sử hiển thị STT / ID, ảnh đối chiếu, QR hoặc Code 128 từ nguyên nội dung mã đã lưu; QR hỗ trợ Unicode, Code 128 dùng ASCII. Bộ tạo mã chạy tại thiết bị, không gửi nội dung sang dịch vụ bên ngoài.
 - Chỉ **Stock** có QTY: lấy trường QTY rõ ràng trong barcode, nếu thiếu thì dùng cột qty trong MM. Không suy từ Selling Q’ty hay MOQ. HS / Label và Stock chưa có nguồn QTY để trống. Tổng theo toàn bộ lịch sử loại quét đang chọn; gửi lại yêu cầu không cộng lặp, xóa lượt quét cập nhật tổng. Lượt Stock cũ giữ QTY đã ghi, không tự gán QTY MM mới cho lịch sử cũ.
 - Xuất lịch sử quét `.xlsx` có STT / ID và cột số lượng.
+- Tra cứu MM không có chế độ quét liên tục. Camera đọc một mã rồi đóng để xem kết quả, không đổi tùy chọn quét của HS / Stock / Label / CKD. Kết quả dài có Xem thêm để đọc hết các dòng.
 - Tra cứu MM mở bằng 4 thư mục lớn dạng lưới 2 × 2: Location / Item code / Spec / Nhập file (admin). Mỗi thư mục mở một trang riêng có nút quay lại. Ba trang tra cứu có nút Xem, hỗ trợ quét camera và đường dẫn giữ đúng trang khi tải lại. Spec dùng description; CSV nhận tiêu đề Spec.
-- Nhập danh mục MM từ CSV UTF-8 tại **Tra cứu MM → Nhập file**, dành cho admin. **Cài đặt → Dữ liệu MM** vẫn dùng được. Mẫu cũ 9 cột vẫn dùng được; mẫu mới bổ sung qty và lot_no tùy chọn.
+- Nhập MM từ Excel **.xls / .xlsx**, tối đa 32 MB, đọc đủ tất cả sheet (kể cả sheet ẩn), hoặc CSV UTF-8 cũ 2 MB. Tìm tiêu đề trong 100 dòng đầu, báo số dòng của từng sheet. File mẫu dạng LOCATION / ITEM CD / ITEM NM / SPEC / BARCODE_NO / QTY được hỗ trợ, không cần thêm Selling Q’ty hay MOQ không có trong file. Giữ từng barcode, lô, vị trí, Maker / BP_NM, QTY thập phân, ngày nhập và thông tin nhãn; chỉ bỏ dòng tổng cuối sheet khi chỉ có QTY. Nhập lại cập nhật theo barcode, không nhân đôi và không xóa các barcode ngoài file. Nếu một sheet có lỗi thì toàn bộ workbook chưa được nhập.
 - CKD: nhập XLSX hai sheet (Sheet1 SO, Sheet2 CKD model list), quét Samsung rồi ITEM bằng camera Barcode/QR hoặc máy quét. Đối chiếu Material Code / HS Code, Selling Code, SO Maker và Maker; hiện Item, Description, Vendor, MOQ, Selling Qty và tổng box.
 - Camera CKD hiển thị hai ô Samsung / ITEM riêng; dấu × xóa riêng một mã và giữ mã còn lại. Chọn ô để quét lại vào đúng vị trí.
 - CKD ưu tiên phần quét ở trên; đơn hàng SO nằm bên dưới, mặc định thu gọn, có nút đổi đơn và xổ/ẩn. Thanh quét dùng nút liên tục và tự chụp ảnh giống mục thu thập dữ liệu; có tên phiên, nhập tay/máy quét, ảnh riêng Samsung/ITEM khi xác nhận, xem ảnh và QR/mã vạch trong lịch sử. Quét camera vẫn hỗ trợ zoom, kéo/đổi cỡ khung, flash, rung, âm thanh và nhãn bóng.
@@ -52,7 +53,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-37 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
+42 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
@@ -140,3 +141,13 @@ Giữ bản sao riêng tư ngoài VPS và kiểm tra khả năng khôi phục. D
 Repository chứa mã nguồn, test, CSV mẫu không có dữ liệu và cấu hình triển khai mẫu. `.env`, SQLite, ảnh quét, backups, phiên đăng nhập và thiết lập quản trị riêng của VPS được giữ ngoài Git.
 
 Bộ đọc dự phòng `@zxing/library` 0.21.3 được self-host trong `public/vendor`. Các thông báo và giấy phép Apache-2.0 / MIT nằm trong cùng thư mục.
+
+## File Excel MM nhiều sheet
+
+Tại Tra cứu MM → Nhập file, chọn trực tiếp file .xls hoặc .xlsx. Mỗi sheet dữ liệu cần các cột LOCATION, ITEM CD, ITEM NM, SPEC, BARCODE_NO và QTY. Các cột S/L, Receipt DT, BP_CD, BP_NM, CUST_LBL_NO, LOT_NO, MAKER, LABEL_STS được lưu kèm nếu có. Một ITEM có nhiều barcode / vị trí / lô vẫn giữ đủ từng dòng. QTY được phép có phần thập phân; không tự suy Selling Q’ty hoặc MOQ từ tồn kho.
+
+Giới hạn Excel: 100 sheet, 250.000 dòng dữ liệu tổng cộng, 256 cột mỗi sheet; đọc trong worker có giới hạn bộ nhớ và thời gian. Sheet trống được báo riêng; sheet có dữ liệu nhưng không nhận diện được tiêu đề sẽ làm dừng toàn bộ lượt nhập, không bỏ qua âm thầm. Sau thành công, màn hình báo số dòng của mọi sheet và dòng tổng đã loại. Workbook và dữ liệu người dùng không được lưu trong Git.
+
+Dữ liệu Excel MM được lưu theo BARCODE_NO trong bảng tồn chi tiết, tách khỏi danh mục CKD cũ cần Selling Q’ty / MOQ. Tra cứu MM hợp nhất hai nguồn; Stock ưu tiên đúng barcode của MM Excel và lưu snapshot QTY / Lot / Maker / Vendor tại lúc quét. Nhập Excel không sửa workbook SO / model list của CKD.
+
+Bộ đọc SheetJS CE 0.20.3 được vendored tại lib/vendor, kèm giấy phép Apache-2.0 và thông báo nguồn; không cần tải thư viện lúc chạy.

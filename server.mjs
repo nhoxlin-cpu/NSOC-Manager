@@ -8,6 +8,8 @@ import { parseCSV, excel } from './lib/formats.mjs';
 import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd } from './lib/ckd.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
+import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
+import { importMMRows,listMM } from './lib/mm-data.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -79,7 +81,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-tidy-20261113-12' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-workbook-20261113-13' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -151,7 +153,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'GET' && path === '/api/stats') return send(res, 200, {
         scans: db.prepare('SELECT COUNT(*) n FROM scans').get().n,
-        materials: db.prepare('SELECT COUNT(*) n FROM materials').get().n,
+        materials: db.prepare('SELECT COUNT(*) n FROM (SELECT item_code FROM materials UNION SELECT item_code FROM mm_inventory)').get().n,
         boxes: db.prepare('SELECT COUNT(*) n FROM boxes').get().n,
         holding: db.prepare('SELECT COALESCE(SUM(qty),0) n FROM movements').get().n
       });
@@ -181,11 +183,19 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const field=url.searchParams.get('field')||'all';
         const fields={all:'m.item_code || m.samsung || m.item || m.description || m.maker || m.location || m.vendor',location:'m.location',item_code:'m.item_code',spec:'m.description'};
         if(!Object.hasOwn(fields,field))fail(400,'Chọn Location, Item code hoặc Spec.');
-        const where=`instr(lower(${fields[field]}),lower(?))>0`,order=field==='location'?'m.location,m.item_code':field==='spec'?'m.description,m.item_code':'m.item_code';
-        return send(res, 200, { materials: db.prepare(`SELECT m.*,st.qty,st.lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE ${where} ORDER BY ${order} LIMIT 200`).all(q), total: db.prepare('SELECT COUNT(*) n FROM materials').get().n,matched:db.prepare(`SELECT COUNT(*) n FROM materials m WHERE ${where}`).get(q).n,field });
+        const offset=Number(url.searchParams.get('offset')||0);if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)fail(400,'Trang tra cứu không hợp lệ.');
+        return send(res,200,listMM(db,{q,field,offset}));
       }
       if (req.method === 'POST' && path === '/api/materials/import') {
-        adminAccess(u); const b = await jsonBody(req);
+        adminAccess(u); const b = await jsonBody(req,46*1024*1024);
+        if(Object.hasOwn(b,'file')){
+          if(typeof b.file!=='string'||b.file.length>Math.ceil(MAX_MM_BYTES/3)*4+200||!/^data:[^,]*;base64,[A-Za-z0-9+/=]+$/.test(b.file))fail(400,'Chọn file MM .xls / .xlsx tối đa 32 MB.');
+          const bytes=Buffer.from(b.file.slice(b.file.indexOf(',')+1),'base64');
+          if(bytes.length>MAX_MM_BYTES)fail(400,'File MM tối đa 32 MB.');
+          const name=text(b.name,'Tên file',200);
+          let parsed;try{parsed=await parseMMInWorker(bytes);}catch(e){fail(400,e.message);}
+          return send(res,200,importMMRows(db,parsed,name));
+        }
         if (typeof b.csv !== 'string' || b.csv.length > 2_000_000) fail(400, 'CSV tối đa 2 MB.');
         let rows;
         try { rows = parseCSV(b.csv); } catch (e) { fail(400, e.message); }
