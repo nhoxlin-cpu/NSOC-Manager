@@ -210,13 +210,18 @@ test('mode histories, totals and exports stay separate and reject invalid modes'
   assert.equal((await request('/api/scans?mode=wrong',viewer)).status,400);assert.equal((await request('/api/export?kind=scans&mode=wrong',viewer)).status,400);
 });
 
-test('HS rejects a duplicate even when force saving, with simultaneous devices and idempotent retry',async()=>{
-  const bodies=[{request_id:randomUUID(),barcode:'HS-STRICT-ONE',mode:'HS',reject_duplicate:false},{request_id:randomUUID(),barcode:' hs-strict-one ',mode:'HS',reject_duplicate:false}];
+test('HS saves duplicate occurrences with stable results, simultaneous devices and idempotent retry',async()=>{
+  const image='data:image/jpeg;base64,'+Buffer.from([255,216,255,224,0,0]).toString('base64');
+  const bodies=[{request_id:randomUUID(),barcode:'HS-SAVE-ONE',mode:'HS',reject_duplicate:true,image},{request_id:randomUUID(),barcode:' hs-save-one ',mode:'HS',reject_duplicate:true,image}];
   const results=await Promise.all(bodies.map(body=>request('/api/scans',inspector,'POST',body)));
-  assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);assert.equal(results.find(r=>r.status===409).data.code,'DUPLICATE_SCAN');
-  const savedIndex=results.findIndex(r=>r.status===201);assert.equal((await request('/api/scans',inspector,'POST',bodies[savedIndex])).status,200);
-  assert.equal((await request('/api/scans',admin,'POST',{...bodies[0],request_id:randomUUID()})).status,409);
-  assert.equal((await request('/api/scans',inspector,'POST',{...bodies[0],request_id:randomUUID(),mode:'Label'})).status,201);
+  assert.deepEqual(results.map(r=>r.status),[201,201]);assert.deepEqual(results.map(r=>r.data.prior_count).sort(),[0,1]);
+  for(let i=0;i<2;i++){const retry=await request('/api/scans',inspector,'POST',bodies[i]);assert.equal(retry.status,200);assert.equal(retry.data.id,results[i].data.id);assert.equal(retry.data.is_duplicate,results[i].data.is_duplicate);}
+  const third=await request('/api/scans',admin,'POST',{...bodies[0],request_id:randomUUID()});assert.equal(third.status,201);assert.equal(third.data.is_duplicate,true);assert.equal(third.data.prior_count,2);
+  const label=await request('/api/scans',inspector,'POST',{...bodies[0],request_id:randomUUID(),mode:'Label'});assert.equal(label.status,201);assert.equal(label.data.is_duplicate,false);
+  const history=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.equal(history.length,3);assert.ok(history.every(r=>r.has_image));
+  const original=results.find(r=>r.data.prior_count===0);assert.equal((await request('/api/scans/'+original.data.id,admin,'DELETE')).status,200);
+  const remaining=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.ok(remaining.every(r=>r.prior_count>0));
+  const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const xml=Buffer.from(await file.arrayBuffer()).toString();assert.ok(xml.includes('HS-SAVE-ONE'));assert.ok(xml.indexOf('ITEM')<xml.indexOf('Barcode'));assert.ok(xml.indexOf('Barcode')<xml.indexOf('quét'));
 });
 
 test('Stock resolves MM metadata, snapshots QTY and Lot No, and legacy imports preserve optional columns',async()=>{

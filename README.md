@@ -10,12 +10,12 @@
 - Quét HS / Stock / Label bằng bàn phím, máy scan hoặc camera điện thoại.
 - Quét liên tục mặc định bật trên HS / Stock / Label và camera điền mã CKD / MM / Holding. Nút bật/tắt lưu theo tài khoản; khi tắt, đọc một mã rồi chọn “Quét mã tiếp theo”. Quét điền mã vẫn cần xác nhận box hoặc giao dịch kho riêng.
 - Camera toàn màn hình gọn: Barcode / QR, quét liên tục, tự lưu mã mới, cảnh báo trùng, đếm lượt; zoom, flash, âm thanh và rung khi thiết bị hỗ trợ. Dùng camera sau, không có nút lật camera; điều khiển gộp hai hàng và nút quay lại/flash cỡ nhỏ.
-- Giữ một mã trước camera không tạo thêm lượt liên tục. Stock / Label chỉ lưu thêm mã đã có khi người dùng chủ động chọn; HS luôn chặn lưu trùng.
+- Giữ một mã trước camera không tạo thêm lượt liên tục. HS lưu cả mã trùng; Stock / Label chỉ lưu thêm mã đã có khi người dùng chủ động chọn.
 - Kéo khung để di chuyển, kéo góc để đổi kích thước, chụm hai ngón để zoom; có zoom ảnh khi camera không hỗ trợ zoom quang học và nút đặt lại khung.
 - Chế độ Nhãn bóng / chói tắt flash, giảm bù phơi sáng nếu thiết bị hỗ trợ và thử tăng tương phản ảnh đọc. Vùng phản chiếu trắng hoàn toàn vẫn cần đổi góc hoặc ánh sáng.
 - Kiểm tra trùng toàn bộ lịch sử dùng chung theo loại quét, kể cả khi hai thiết bị quét cùng lúc.
-- HS: mã chưa trùng hiện xanh; mã trùng hiện đỏ và không lưu thêm, kể cả yêu cầu bỏ qua kiểm tra trùng. Giữ một mã trước camera không tạo thêm lượt hoặc tự báo trùng. Sau khi quét mã khác rồi gặp lại mã cũ, cảnh báo trùng vẫn hoạt động. Mất mạng thì hiện vàng vì chưa đối chiếu toàn server.
-- HS / Stock / Label có lịch sử, tổng, Excel và hàng chờ riêng trên từng tab, dùng chung giữa người dùng trong cùng loại quét. Lượt HS trùng khi đồng bộ giữ trong hàng chờ kèm ảnh để xem hoặc chủ động bỏ.
+- HS: mã chưa trùng hiện xanh; mã trùng hiện đỏ và vẫn lưu một lượt riêng kèm ảnh. Lịch sử HS tách riêng, ITEM / Barcode là cột thứ hai và Người quét nằm gần cuối; Excel HS có thứ tự tương ứng. Kết quả so sánh được lưu tại lúc quét, không đổi khi xóa lượt trước. Giữ một mã trước camera không tạo thêm lượt hoặc tự báo trùng. Sau khi quét mã khác rồi gặp lại mã cũ, cảnh báo trùng vẫn hoạt động. Mất mạng thì hiện vàng vì chưa đối chiếu toàn server.
+- HS / Stock / Label có lịch sử, tổng, Excel và hàng chờ riêng trên từng tab, dùng chung giữa người dùng trong cùng loại quét. Lượt HS trùng trong hàng chờ vẫn được đồng bộ và lưu riêng; retry cùng mã yêu cầu không tạo thêm bản ghi.
 - Stock tra MM theo mã Samsung hoặc ITEM code; nhận thêm ITEM / ITEM_CODE / SAMSUNG có nhãn rõ ràng trong barcode. Hiện ITEM code, Item NM, QTY, Maker / Vendor, Lot No khi lưu và trong lịch sử. QTY / LOT_NO trên nhãn được ưu tiên; nếu thiếu thì dùng qty / lot_no trong MM. Thông tin Stock mới giữ tại thời điểm quét, không đổi khi nhập lại MM.
 - Giữ lượt quét bằng IndexedDB khi mất mạng và đồng bộ thủ công, chống ghi lặp khi gửi lại yêu cầu.
 - Hai nút vuông cạnh Quét camera: mũi tên vòng bật/tắt quét liên tục; camera bật/tắt tự chụp ảnh đối chiếu. Lựa chọn ảnh nhớ theo tài khoản trên thiết bị.
@@ -47,7 +47,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-28 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
+29 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
