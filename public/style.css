@@ -23,3 +23,5 @@
 .generated-code[data-format="qr"] canvas{max-width:100%;height:auto}
 .code-formats{margin-bottom:12px}
 @media(max-width:375px){.capture-actions{grid-template-columns:minmax(0,1fr) 44px 44px;gap:6px}.capture-actions .button{min-height:44px;padding:8px;font-size:11px;gap:5px}.capture-actions .scan-square{width:44px;height:44px;padding:0}.capture-actions svg{width:21px;height:21px}}
+
+#mm-settings{scroll-margin-top:24px}#mm-settings summary{font-weight:700;font-size:17px}.pending{flex-wrap:wrap}.badge.red{background:#ffe5e9;color:#a31e38}

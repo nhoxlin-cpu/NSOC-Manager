@@ -40,6 +40,7 @@ export class PhoneScanner {
         <div class="scanner-heading"><div><span class="scanner-eyebrow">WORK AREA · QUÉT LIÊN TỤC</span><h2 id="scanner-title"></h2></div><button id="scanner-continuous" class="scanner-continuous" aria-pressed="true">${svg('continuous')}</button></div>
         <p class="scanner-status" id="scanner-status" aria-live="polite">Đang mở camera…</p>
         <div class="scanner-result" id="scanner-result"><span id="scanner-value">Đưa mã vào khung</span><span id="scanner-result-icon"></span></div>
+        <dl class="scanner-stock-info" id="scanner-stock-info" hidden></dl>
         <p class="scanner-count" id="scanner-count">Đã lưu 0 lượt trong lần mở camera này</p>
         <div class="scanner-result-actions"><button class="scanner-repeat" id="scanner-repeat" disabled>Quét lại cùng mã</button><button class="scanner-next" id="scanner-next" hidden>Quét mã tiếp theo</button></div>
         <div class="scanner-alerts" id="scanner-alerts" aria-live="polite"></div>
@@ -61,7 +62,7 @@ export class PhoneScanner {
     this.$('#scanner-zoom').onchange=e => this.zoom(Number(e.target.value));
     this.$('#scanner-glare').onclick=()=>this.setGlare(!this.glare);this.$('#scanner-reset-view').onclick=()=>this.resetView();
     this.installGestures();
-    this.onClose=() => this.release(); dialog.addEventListener('close',this.onClose);
+    this.onClose=() => {if(!dialog.open)this.release();}; dialog.addEventListener('close',this.onClose);
     this.settings(); this.formatUI();this.flowUI();
   }
   async open() {
@@ -91,7 +92,7 @@ export class PhoneScanner {
     this.flowUI();if(notify)this.options.onContinuousChange?.(on);
   }
   resumeSingle() {
-    this.singlePaused=false;this.latched='';this.candidate='';this.hits=0;this.candidateTime=0;this.flowUI();this.paint('ready','Sẵn sàng quét mã tiếp theo',this.lastCode);
+    this.singlePaused=false;this.latched='';this.lastRead='';this.candidate='';this.hits=0;this.candidateTime=0;this.flowUI();this.paint('ready','Sẵn sàng quét mã tiếp theo',this.lastCode);
   }
   formatUI() {
     this.dialog.dataset.format=this.format;
@@ -100,7 +101,7 @@ export class PhoneScanner {
   }
   async changeFormat(format) {
     if (this.format === format || this.changing) return;
-    this.changing=true; this.saveRoi();this.format=format; remember('format',format); this.formatUI();this.roi=null;this.layoutRoi();this.candidate=''; this.hits=0; this.latched='';
+    this.changing=true; this.saveRoi();this.format=format; remember('format',format); this.formatUI();this.roi=null;this.layoutRoi();this.candidate=''; this.hits=0;
     try { await this.prepareDecoder(); } catch(e) { this.paint('error',e.message); }
     finally { this.changing=false; }
   }
@@ -177,6 +178,9 @@ export class PhoneScanner {
   }
   async accept(code,force=false,image=null) {
     if (this.busy || !this.active) return;
+    if(!force && this.options.mode==='HS' && this.lastRead===code)return;
+    this.lastRead=code;
+    this.stockUI(null);
     if(code!==this.lastCode)this.lastImage=null;
     if(image)this.lastImage=image;
     this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
@@ -192,13 +196,13 @@ export class PhoneScanner {
       try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
       catch(e) { if (!e.network) throw e; online=false; }
       if (!this.active) return;
-      if (!force && (known>0 || local>0 || this.seen.has(code))) { this.duplicate(code,known,local,online); return; }
+      if ((!force || this.options.mode==='HS') && (known>0 || local>0 || this.seen.has(code))) { this.duplicate(code,known,local,online); return; }
       if (!online) {
         await this.options.enqueue({...payload,reject_duplicate:false}); this.queued++; this.seen.set(code,true); this.paint('pending','Chờ đồng bộ · Chưa kiểm tra trùng toàn server',code); this.feedback(false);
       } else {
         try {
-          const result=await this.options.api('/scans',{method:'POST',data:payload}); this.saved++; this.seen.set(code,true);
-          this.paint('success',result.barcode_count>1 ? `Đã lưu thêm · Mã có ${result.barcode_count} lượt trên server` : 'Đã lưu · Đã kiểm tra trùng trên server',code); this.feedback(false);
+          const result=await this.options.api('/scans',{method:'POST',data:payload}); this.saved++; this.seen.set(code,true);this.stockUI(result.stock);
+          this.paint('success',this.options.mode==='HS'?'HS · KHÔNG TRÙNG · Đã lưu':result.barcode_count>1 ? `Đã lưu thêm · Mã có ${result.barcode_count} lượt trên server` : 'Đã lưu · Đã kiểm tra trùng trên server',code); this.feedback(false);
         } catch(e) {
           if (e.code === 'DUPLICATE_SCAN') { this.duplicate(code,e.count,local,true); return; }
           if (!e.network) throw e;
@@ -216,7 +220,14 @@ export class PhoneScanner {
     const container=this.$('#scanner-alerts'); container.replaceChildren();
     for (const alert of this.alerts) { const row=document.createElement('div'); row.className='scanner-alert'; row.textContent=alert.label; container.append(row); }
     this.paint('duplicate',serverCount ? `TRÙNG ${serverCount} lượt trên server · Chưa lưu thêm` : online ? 'Mã đã có trong phiên hoặc hàng chờ · Chưa lưu thêm' : 'Mã đã quét trên thiết bị · Chưa kiểm tra toàn server',code);
-    this.$('#scanner-repeat').textContent='Lưu thêm lượt cùng mã'; this.feedback(true);
+    this.$('#scanner-repeat').textContent=this.options.mode==='HS'?'Kiểm tra lại mã':'Lưu thêm lượt cùng mã'; this.feedback(true);
+  }
+  stockUI(row){
+    const el=this.$('#scanner-stock-info');el.replaceChildren();el.hidden=this.options.mode!=='Stock'||!row;
+    if(el.hidden)return;
+    for(const [label,value] of [['ITEM code',row.item_code||'Chưa tìm thấy trong MM'],['Item NM',row.item_name],['QTY',row.quantity],['Maker / Vendor',[row.maker,row.vendor].filter(Boolean).join(' / ')],['Lot No',row.lot_no]]){
+      const dt=document.createElement('dt'),dd=document.createElement('dd');dt.textContent=label;dd.textContent=value??'—';el.append(dt,dd);
+    }
   }
   paint(kind,message,code) {
     if (!this.active) return;
