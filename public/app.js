@@ -316,17 +316,36 @@ async function fillItemCode(code,input) {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && $('#camera-dialog').open) $('#camera-dialog').close(); });
 
+let mmLookupField='location';
 async function materials(id) {
-  if (!state.user) { $('#main').innerHTML = needsLogin('Tra cứu MM'); return; }
-  $('#main').innerHTML = `${pageTop('Tra cứu MM', 'Danh mục vật tư & Location')}<section class="panel"><form class="search-row" id="mm-search"><input id="mm-q" name="q" placeholder="Tìm ITEM, Samsung, tên hàng, Maker hoặc Location" aria-label="Tìm vật tư" maxlength="200"><button class="button primary" type="submit">${icon('search')} Tìm</button></form><div id="mm-results"></div></section>${state.user.role === 'admin' ? '<p class="muted">Nhập file MM tại <a class="button small" href="#account?mm-settings">Cài đặt → Dữ liệu MM</a></p>' : ''}`;
-  const search = async q => {
-    const result = await api('/materials?q=' + encodeURIComponent(q)); if (id !== renderId || !$('#mm-results')) return;
-    $('#mm-results').innerHTML = `<p class="muted">${result.materials.length} kết quả hiển thị · ${number(result.total)} vật tư trong MM${result.materials.length === 200 ? ' · Nhập từ khóa cụ thể hơn để thu hẹp.' : ''}</p>` + (result.materials.length ? `<div class="table-wrap"><table><thead><tr><th>ITEM / Samsung</th><th>Vật tư</th><th>Maker / Vendor</th><th>Location</th><th>QTY Stock / Lot No</th><th>Selling Q’ty / MOQ</th></tr></thead><tbody>${result.materials.map(m => `<tr><td>${escape(m.item_code)}<small>${escape(m.samsung)}</small></td><td class="wrap">${escape(m.item)}<small>${escape(m.description)}</small></td><td>${escape(m.maker)}<small>${escape(m.vendor)}</small></td><td>${escape(m.location) || '—'}</td><td>${m.qty==null?'—':number(m.qty)}<small>${escape(m.lot_no)||'—'}</small></td><td>${number(m.selling_qty)}<small>MOQ ${number(m.moq)}</small></td></tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>` : empty('Chưa có kết quả', result.total ? 'Thử tìm bằng mã ITEM hoặc mã Samsung khác.' : 'Quản trị viên cần nhập danh mục MM trước khi đối chiếu CKD.', 'search'));
+  if(!state.user){$('#main').innerHTML=needsLogin('Tra cứu MM');return;}
+  const modes={location:'Location',item_code:'Item code',spec:'Spec'};
+  let request=0;
+  $('#main').innerHTML=`${pageTop('Tra cứu MM','Location · Item code · Spec')}<section class="panel"><div class="mm-filter-options" role="group" aria-label="Tra cứu theo">${Object.entries(modes).map(([key,label])=>`<button type="button" class="button ${mmLookupField===key?'primary':''}" data-mm-field="${key}" aria-pressed="${mmLookupField===key}">${label}</button>`).join('')}</div><form id="mm-search"><div class="search-row"><input id="mm-q" name="q" aria-label="Từ khóa tra cứu" maxlength="200" autocomplete="off"><button class="button primary" type="submit">${icon('search')} Xem</button>${state.user.role==='admin'?`<a class="button" id="mm-import-link" href="#account?mm-settings">${icon('plus')} Nhập file</a>`:''}</div><p class="form-message" role="alert"></p></form><p class="muted mm-field-note" id="mm-field-note"></p><div id="mm-results" aria-live="polite"></div></section>`;
+  function fieldUI(){
+    document.querySelectorAll('[data-mm-field]').forEach(b=>{const active=b.dataset.mmField===mmLookupField;b.classList.toggle('primary',active);b.setAttribute('aria-pressed',String(active));});
+    $('#mm-q').placeholder='Nhập '+modes[mmLookupField]+' cần tìm';$('#mm-q').setAttribute('aria-label','Tìm theo '+modes[mmLookupField]);
+    $('#mm-field-note').textContent=mmLookupField==='spec'?'Spec dùng cột mô tả (description / spec) trong file MM.':'Tra cứu theo '+modes[mmLookupField]+'. Để trống rồi chọn Xem để xem danh sách.';
+  }
+  const search=async q=>{
+    const field=mmLookupField,version=++request,el=$('#mm-results');
+    el.textContent='Đang tra cứu '+modes[field]+'…';
+    try{
+      const result=await api('/materials?field='+field+'&q='+encodeURIComponent(q));
+      if(id!==renderId||!el.isConnected||version!==request||field!==mmLookupField)return;
+      const columns=[['location','Location'],['item_code','Item code / Samsung'],['spec','Spec'],['item','Item NM'],['maker','Maker / Vendor'],['qty','QTY Stock / Lot No'],['selling_qty','Selling Q’ty / MOQ']];
+      const first=columns.findIndex(([key])=>key===field);columns.unshift(...columns.splice(first,1));
+      const cell=(m,key)=>key==='item_code'?`${escape(m.item_code)}<small>${escape(m.samsung)}</small>`:key==='spec'?escape(m.description)||'—':key==='maker'?`${escape(m.maker)||'—'}<small>${escape(m.vendor)}</small>`:key==='qty'?`${m.qty==null?'—':number(m.qty)}<small>${escape(m.lot_no)||'—'}</small>`:key==='selling_qty'?`${number(m.selling_qty)}<small>MOQ ${number(m.moq)}</small>`:escape(m[key])||'—';
+      el.innerHTML=`<p class="muted">${modes[field]} · ${number(result.materials.length)} / ${number(result.matched)} kết quả · ${number(result.total)} vật tư trong MM${result.matched>result.materials.length?' · Nhập từ khóa cụ thể hơn để thu hẹp.':''}</p>`+(result.materials.length?`<div class="table-wrap"><table><thead><tr>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${result.materials.map(m=>`<tr>${columns.map(([key])=>`<td class="wrap">${cell(m,key)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>`:empty('Chưa có kết quả',result.total?'Không có '+modes[field]+' phù hợp. Thử từ khóa khác.':state.user.role==='admin'?'Chọn Nhập file để thêm danh mục MM.':'Quản trị viên cần nhập danh mục MM.','search'));
+    }catch(e){if(id===renderId&&el.isConnected&&version===request)el.innerHTML=empty('Chưa tải được MM',escape(e.message),'sync');throw e;}
   };
-  scanFlowBar($('.panel'));fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu MM. Quét mã tiếp theo để xem kết quả mới.';});
-  formAction('#mm-search', async b => {await search(b.q);if(state.continuousScan)$('#mm-q')?.select();});
-  try { await search(''); } catch(e) { if (id === renderId) $('#mm-results').innerHTML = empty('Chưa tải được MM',escape(e.message),'sync'); }
+  fieldUI();
+  document.querySelectorAll('[data-mm-field]').forEach(b=>b.onclick=()=>{if(mmLookupField===b.dataset.mmField)return;mmLookupField=b.dataset.mmField;fieldUI();search($('#mm-q').value).catch(e=>toast(e.message));});
+  scanFlowBar($('.panel'));fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu theo '+modes[mmLookupField]+'.';});
+  formAction('#mm-search',async b=>{await search(b.q);if(state.continuousScan)$('#mm-q')?.select();});
+  try{await search('');}catch{}
 }
+
 function downloadText(name, text) { const url = URL.createObjectURL(new Blob([text], { type:'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 
 async function ckd() {

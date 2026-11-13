@@ -77,7 +77,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'hs-history-20261113-7' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-lookup-20261113-8' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -155,14 +155,18 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       });
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
-        return send(res, 200, { materials: db.prepare('SELECT m.*,st.qty,st.lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE instr(lower(m.item_code || m.samsung || m.item || m.maker || m.location || m.vendor), lower(?)) > 0 ORDER BY m.item_code LIMIT 200').all(q), total: db.prepare('SELECT COUNT(*) n FROM materials').get().n });
+        const field=url.searchParams.get('field')||'all';
+        const fields={all:'m.item_code || m.samsung || m.item || m.description || m.maker || m.location || m.vendor',location:'m.location',item_code:'m.item_code',spec:'m.description'};
+        if(!Object.hasOwn(fields,field))fail(400,'Chọn Location, Item code hoặc Spec.');
+        const where=`instr(lower(${fields[field]}),lower(?))>0`,order=field==='location'?'m.location,m.item_code':field==='spec'?'m.description,m.item_code':'m.item_code';
+        return send(res, 200, { materials: db.prepare(`SELECT m.*,st.qty,st.lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE ${where} ORDER BY ${order} LIMIT 200`).all(q), total: db.prepare('SELECT COUNT(*) n FROM materials').get().n,matched:db.prepare(`SELECT COUNT(*) n FROM materials m WHERE ${where}`).get(q).n,field });
       }
       if (req.method === 'POST' && path === '/api/materials/import') {
         adminAccess(u); const b = await jsonBody(req);
         if (typeof b.csv !== 'string' || b.csv.length > 2_000_000) fail(400, 'CSV tối đa 2 MB.');
         let rows;
         try { rows = parseCSV(b.csv); } catch (e) { fail(400, e.message); }
-        const aliases={item_nm:'item',item_name:'item',mark:'maker',barcode:'samsung'};
+        const aliases={item_nm:'item',item_name:'item',mark:'maker',barcode:'samsung',spec:'description'};
         const headers = rows.shift()?.map(value=>{const key=value.trim().toLowerCase().replace(/\s+/g,'_');return aliases[key]||key;});
         const keys = ['item_code', 'samsung', 'item', 'description', 'maker', 'vendor', 'location', 'selling_qty', 'moq'];
         if (!headers || new Set(headers).size!==headers.length || keys.some(k => !headers.includes(k)) || headers.some(k=>![...keys,'qty','lot_no'].includes(k))) fail(400, `Cột CSV cần đủ và không trùng: ${keys.join(', ')}; có thể thêm qty, lot_no.`);

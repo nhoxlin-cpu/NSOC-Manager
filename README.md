@@ -24,6 +24,7 @@
 - Lịch sử hiển thị STT / ID, ảnh đối chiếu, QR hoặc Code 128 từ nguyên nội dung mã đã lưu; QR hỗ trợ Unicode, Code 128 dùng ASCII. Bộ tạo mã chạy tại thiết bị, không gửi nội dung sang dịch vụ bên ngoài.
 - Chỉ **Stock** có QTY: lấy trường QTY rõ ràng trong barcode, nếu thiếu thì dùng cột qty trong MM. Không suy từ Selling Q’ty hay MOQ. HS / Label và Stock chưa có nguồn QTY để trống. Tổng theo toàn bộ lịch sử loại quét đang chọn; gửi lại yêu cầu không cộng lặp, xóa lượt quét cập nhật tổng. Lượt Stock cũ giữ QTY đã ghi, không tự gán QTY MM mới cho lịch sử cũ.
 - Xuất lịch sử quét `.xlsx` có STT / ID và cột số lượng.
+- Tra cứu MM có ba lựa chọn Location / Item code / Spec. Nút Xem tìm riêng trong cột được chọn, để trống để xem danh sách; cột đang chọn nằm đầu bảng. Spec dùng description, hỗ trợ tiêu đề CSV Spec. Nhập file là nút tắt tới Cài đặt → Dữ liệu MM dành cho admin.
 - Nhập danh mục MM từ CSV UTF-8 trong menu **Cài đặt → Dữ liệu MM** (thu gọn trong trang tài khoản, chỉ admin). Trang Tra cứu MM không còn biểu mẫu nhập file. Mẫu cũ 9 cột vẫn dùng được; mẫu mới bổ sung qty và lot_no tùy chọn.
 - CKD: đối chiếu hai nhãn và Maker với MM, xác nhận box theo phiếu/lô, chặn box trùng và số lượng vượt mục tiêu.
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
@@ -47,7 +48,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-29 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
+31 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
@@ -103,7 +104,7 @@ Dùng `examples/mm-template.csv`, hoặc tải CSV mẫu từ giao diện quản
 | `qty` | Tùy chọn: QTY Stock khi barcode không có QTY; trống nếu chưa biết |
 | `lot_no` | Tùy chọn: Lot No Stock khi barcode không có LOT / LOT_NO |
 
-Nhập file tại menu **Cài đặt → Dữ liệu MM**. Các tiêu đề `Item Code`, `Item NM` / `Item Name`, `Barcode`, `Mark`, `Lot No` tương ứng với `item_code`, `item`, `samsung`, `maker`, `lot_no`. Maker có thể trống nếu có Vendor; CKD vẫn cần Maker để đối chiếu. Mẫu cũ không có qty / lot_no giữ hai giá trị Stock đã lưu; có cột nhưng ô trống thì xóa giá trị tương ứng về chưa xác định.
+Nhập file tại menu **Cài đặt → Dữ liệu MM**. Các tiêu đề `Item Code`, `Item NM` / `Item Name`, `Barcode`, `Mark`, `Lot No` tương ứng với `item_code`, `item`, `samsung`, `maker`, `lot_no`. Tiêu đề `Spec` tương ứng `description`; không dùng đồng thời hai tiêu đề này trong cùng file. Maker có thể trống nếu có Vendor; CKD vẫn cần Maker để đối chiếu. Mẫu cũ không có qty / lot_no giữ hai giá trị Stock đã lưu; có cột nhưng ô trống thì xóa giá trị tương ứng về chưa xác định.
 
 Tối đa 2 MB và 10.000 dòng mỗi lượt. Ô có dấu phẩy cần đặt trong dấu nháy. Một dòng không hợp lệ sẽ hủy toàn bộ batch. Nhập lại ITEM cập nhật ITEM đó, không xóa các ITEM khác.
 
