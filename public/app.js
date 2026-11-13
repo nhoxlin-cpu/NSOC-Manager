@@ -2,6 +2,7 @@ import { PhoneScanner, zxing } from '/scanner.js?v=20261113-7';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
+  folder: '<path d="M3 7V5a2 2 0 0 1 2-2h5l3 3h6a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Zm0 1h18"/>',
   settings: '<path d="M9 3h6l1 3 3 1 2 5-2 5-3 1-1 3H9l-1-3-3-1-2-5 2-5 3-1Z"/><circle cx="12" cy="12" r="3"/>',
   home: '<path d="m3 10 9-7 9 7v11h-7v-7h-4v7H3Z"/>',
   scan: '<path d="M3 8V3h5m8 0h5v5M3 16v5h5m8 0h5v-5M7 6v12M10 6v12M14 6v12M17 6v12M1 12h22"/>',
@@ -83,7 +84,7 @@ function field(label, name, options = {}) {
   const { type = 'text', placeholder = '', value = '', required = true, extra = '', autocomplete = 'off' } = options;
   return `<div class="field"><label for="${escape(name)}">${label}</label><input id="${escape(name)}" name="${escape(name)}" type="${type}" placeholder="${escape(placeholder)}" value="${escape(value)}" autocomplete="${autocomplete}" ${required ? 'required' : ''} ${extra}></div>`;
 }
-function pageTop(title, subtitle, action = '') { return `<div class="page-top"><div><a class="back" href="#home">${icon('back')} Trang chủ</a><h1>${title}</h1><p class="lead">${subtitle}</p></div>${action}</div>`; }
+function pageTop(title, subtitle, action = '', backHref = '#home', backLabel = 'Trang chủ') { return `<div class="page-top"><div><a class="back" href="${escape(backHref)}">${icon('back')} ${escape(backLabel)}</a><h1>${title}</h1><p class="lead">${subtitle}</p></div>${action}</div>`; }
 function empty(title, detail, symbol = 'box') { return `<div class="empty">${icon(symbol)}<strong>${title}</strong>${detail}</div>`; }
 function needsLogin(title) { return `${pageTop(title, 'Không gian làm việc của bạn')}<div class="panel">${empty('Đăng nhập để tiếp tục', 'Sử dụng tài khoản được cấp để truy cập dữ liệu IQC.', 'shield')}<a class="button primary full mt" href="#account">Đăng nhập ${icon('arrow')}</a></div>`; }
 function canWrite() { return state.user && state.user.role !== 'viewer'; }
@@ -143,18 +144,19 @@ async function account() {
   shortcutSettings();
   if (u.role === 'admin') await usersList();
 }
-function mmImportSettings(){
+function mmImportSettings(target=$('.account-layout'),open=false){
   if(state.user?.role!=='admin')return;
   const panel=document.createElement('section');panel.className='panel';panel.id='mm-settings';
   panel.innerHTML=`<details id="mm-settings-details"><summary>Cài đặt · Dữ liệu MM</summary><p class="muted">MM dùng chung cho Stock, tra cứu và CKD. Nhập CSV UTF-8 (tối đa 2 MB / 10.000 dòng). ITEM đã có sẽ được cập nhật; các ITEM khác được giữ lại.</p><p class="muted">Thêm cột qty và lot_no nếu có dữ liệu Stock. qty riêng với Selling Q’ty và MOQ; ô trống để chưa xác định. Nhãn có QTY / Lot No rõ ràng được ưu tiên khi quét. Lịch sử mới giữ thông tin tại thời điểm quét.</p>${button('Tải CSV mẫu','mm-template','small','download')}<form id="mm-import" class="mt"><div class="field"><label for="mm-file">File MM (.csv)</label><input id="mm-file" type="file" accept=".csv,text/csv" required></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">Nhập MM</button></form><p id="mm-import-status" class="muted" role="status"></p></details>`;
-  $('.account-layout').append(panel);
+  target.append(panel);
   $('#mm-template',panel).onclick=()=>downloadText('work-area-mm-template.csv','\uFEFFitem_code,samsung,item,description,maker,vendor,location,selling_qty,moq,qty,lot_no\n');
   formAction('#mm-import',async(_,form)=>{
     const file=$('#mm-file').files[0];if(!file||file.size>2_000_000)throw Error('Chọn CSV tối đa 2 MB.');
     const result=await api('/materials/import',{method:'POST',data:{csv:await file.text()}});
     form.reset();$('#mm-import-status',panel).textContent=`Đã nhập ${number(result.count)} vật tư vào MM dùng chung.`;toast('Đã cập nhật MM.');
   });
-  if(location.hash.includes('mm-settings')){$('#mm-settings-details',panel).open=true;requestAnimationFrame(()=>panel.isConnected&&panel.scrollIntoView({block:'start'}));}
+  if(open)$('#mm-settings-details',panel).open=true;
+  if(!open&&location.hash.includes('mm-settings')){$('#mm-settings-details',panel).open=true;requestAnimationFrame(()=>panel.isConnected&&panel.scrollIntoView({block:'start'}));}
 }
 function shortcutSettings() {
   let draft=[...state.navigation]; const owner=state.user.id;
@@ -316,17 +318,25 @@ async function fillItemCode(code,input) {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && $('#camera-dialog').open) $('#camera-dialog').close(); });
 
-let mmLookupField='location';
 async function materials(id) {
   if(!state.user){$('#main').innerHTML=needsLogin('Tra cứu MM');return;}
   const modes={location:'Location',item_code:'Item code',spec:'Spec'};
-  let request=0;
-  $('#main').innerHTML=`${pageTop('Tra cứu MM','Location · Item code · Spec')}<section class="panel"><div class="mm-filter-options" role="group" aria-label="Tra cứu theo">${Object.entries(modes).map(([key,label])=>`<button type="button" class="button ${mmLookupField===key?'primary':''}" data-mm-field="${key}" aria-pressed="${mmLookupField===key}">${label}</button>`).join('')}</div><form id="mm-search"><div class="search-row"><input id="mm-q" name="q" aria-label="Từ khóa tra cứu" maxlength="200" autocomplete="off"><button class="button primary" type="submit">${icon('search')} Xem</button>${state.user.role==='admin'?`<a class="button" id="mm-import-link" href="#account?mm-settings">${icon('plus')} Nhập file</a>`:''}</div><p class="form-message" role="alert"></p></form><p class="muted mm-field-note" id="mm-field-note"></p><div id="mm-results" aria-live="polite"></div></section>`;
-  function fieldUI(){
-    document.querySelectorAll('[data-mm-field]').forEach(b=>{const active=b.dataset.mmField===mmLookupField;b.classList.toggle('primary',active);b.setAttribute('aria-pressed',String(active));});
-    $('#mm-q').placeholder='Nhập '+modes[mmLookupField]+' cần tìm';$('#mm-q').setAttribute('aria-label','Tìm theo '+modes[mmLookupField]);
-    $('#mm-field-note').textContent=mmLookupField==='spec'?'Spec dùng cột mô tả (description / spec) trong file MM.':'Tra cứu theo '+modes[mmLookupField]+'. Để trống rồi chọn Xem để xem danh sách.';
+  const view=new URLSearchParams(location.hash.split('?')[1]||'').get('view');
+  if(!view||(!Object.hasOwn(modes,view)&&view!=='import')){
+    const folders=[['location','Location','Tra cứu vị trí vật tư','teal'],['item_code','Item code','Tra cứu theo mã hàng','blue'],['spec','Spec','Tra cứu thông số, mô tả','violet']];
+    if(state.user.role==='admin')folders.push(['import','Nhập file','Thêm, cập nhật danh mục MM','amber']);
+    $('#main').innerHTML=`${pageTop('Tra cứu MM','Chọn thư mục để tiếp tục')}<nav class="mm-folder-grid" aria-label="Các thư mục MM">${folders.map(([key,label,note,tone])=>`<a class="mm-folder ${tone}" href="#mm?view=${key}" data-mm-folder="${key}"><span class="mm-folder-icon">${icon('folder')}</span><h2>${label}</h2><p>${note}</p><span class="mm-folder-arrow">${icon('arrow')}</span></a>`).join('')}</nav>`;
+    return;
   }
+  if(view==='import'){
+    $('#main').innerHTML=`${pageTop('Nhập file MM','Cập nhật danh mục dùng chung','','#mm','Tra cứu MM')}<div id="mm-import-page"></div>`;
+    if(state.user.role==='admin')mmImportSettings($('#mm-import-page'),true);
+    else $('#mm-import-page').innerHTML='<section class="panel"><p>Chỉ quản trị viên được nhập file MM.</p></section>';
+    return;
+  }
+  const mmLookupField=view;
+  let request=0;
+  $('#main').innerHTML=`${pageTop(modes[view],'Tra cứu MM · '+modes[view],'','#mm','Tra cứu MM')}<section class="panel"><form id="mm-search"><div class="search-row"><input id="mm-q" name="q" placeholder="Nhập ${modes[view]} cần tìm" aria-label="Tìm theo ${modes[view]}" maxlength="200" autocomplete="off"><button class="button primary" type="submit">${icon('search')} Xem</button></div><p class="form-message" role="alert"></p></form><p class="muted mm-field-note">${view==='spec'?'Spec dùng cột mô tả (description / spec) trong file MM.':'Tra cứu theo '+modes[view]+'. Để trống rồi chọn Xem để xem danh sách.'}</p><div id="mm-results" aria-live="polite"></div></section>`;
   const search=async q=>{
     const field=mmLookupField,version=++request,el=$('#mm-results');
     el.textContent='Đang tra cứu '+modes[field]+'…';
@@ -339,8 +349,6 @@ async function materials(id) {
       el.innerHTML=`<p class="muted">${modes[field]} · ${number(result.materials.length)} / ${number(result.matched)} kết quả · ${number(result.total)} vật tư trong MM${result.matched>result.materials.length?' · Nhập từ khóa cụ thể hơn để thu hẹp.':''}</p>`+(result.materials.length?`<div class="table-wrap"><table><thead><tr>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${result.materials.map(m=>`<tr>${columns.map(([key])=>`<td class="wrap">${cell(m,key)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>`:empty('Chưa có kết quả',result.total?'Không có '+modes[field]+' phù hợp. Thử từ khóa khác.':state.user.role==='admin'?'Chọn Nhập file để thêm danh mục MM.':'Quản trị viên cần nhập danh mục MM.','search'));
     }catch(e){if(id===renderId&&el.isConnected&&version===request)el.innerHTML=empty('Chưa tải được MM',escape(e.message),'sync');throw e;}
   };
-  fieldUI();
-  document.querySelectorAll('[data-mm-field]').forEach(b=>b.onclick=()=>{if(mmLookupField===b.dataset.mmField)return;mmLookupField=b.dataset.mmField;fieldUI();search($('#mm-q').value).catch(e=>toast(e.message));});
   scanFlowBar($('.panel'));fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu theo '+modes[mmLookupField]+'.';});
   formAction('#mm-search',async b=>{await search(b.q);if(state.continuousScan)$('#mm-q')?.select();});
   try{await search('');}catch{}
