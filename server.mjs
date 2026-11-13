@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
 import { parseCSV, excel } from './lib/formats.mjs';
+import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd } from './lib/ckd.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 
@@ -28,12 +29,12 @@ function validPassword(value) {
   if (typeof value !== 'string' || value.length < 8 || value.length > 128) fail(400, 'Mật khẩu phải có từ 8 đến 128 ký tự.');
   return value;
 }
-async function jsonBody(req) {
+async function jsonBody(req, limit = 5 * 1024 * 1024) {
   if (!req.headers['content-type']?.startsWith('application/json')) fail(415, 'Yêu cầu phải dùng JSON.');
   const chunks = []; let total = 0;
   for await (const chunk of req) {
     total += chunk.length;
-    if (total > 5 * 1024 * 1024) fail(413, 'Dữ liệu quá lớn; ảnh tối đa 3 MB.');
+    if (total > limit) fail(413, 'Dữ liệu quá lớn; ảnh tối đa 3 MB.');
     chunks.push(chunk);
   }
   try { const value = JSON.parse(Buffer.concat(chunks)); if (!value || Array.isArray(value) || typeof value !== 'object') throw Error(); return value; }
@@ -51,6 +52,7 @@ function imageData(source) {
 }
 
 export async function createApp({ db = openDatabase(), origin = process.env.APP_ORIGIN || '', production = process.env.NODE_ENV === 'production' } = {}) {
+  initCkd(db);
   if (production && !/^https:\/\/[^/]+$/.test(origin)) throw new Error('Production cần APP_ORIGIN=https://ten-mien-cua-ban (không có dấu / cuối).');
   const dummy = await hashPassword('unused-' + crypto.randomUUID());
   const send = (res, status, data, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(data)); };
@@ -70,14 +72,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-lookup-20261113-8' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-pair-20261113-9' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -153,6 +155,23 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         boxes: db.prepare('SELECT COUNT(*) n FROM boxes').get().n,
         holding: db.prepare('SELECT COALESCE(SUM(qty),0) n FROM movements').get().n
       });
+      if (req.method === 'GET' && path === '/api/ckd/workbooks') return send(res,200,{workbooks:db.prepare('SELECT w.*,(SELECT COUNT(*) FROM ckd_models WHERE workbook_id=w.id) models,(SELECT COUNT(*) FROM ckd_orders WHERE workbook_id=w.id) orders FROM ckd_workbooks w ORDER BY w.id DESC').all()});
+      if (req.method === 'POST' && path === '/api/ckd/import') {
+        writeAccess(u);const b=await jsonBody(req,25*1024*1024);
+        if(typeof b.file!=='string'||b.file.length>24*1024*1024||!/^data:.*?;base64,[A-Za-z0-9+/=]+$/.test(b.file))fail(400,'Chọn file .xlsx tối đa 18 MB.');
+        try {const parsed=parseCkdWorkbook(Buffer.from(b.file.slice(b.file.indexOf(',')+1),'base64'));return send(res,201,importCkdWorkbook(db,parsed,text(b.name,'Tên file / đơn hàng',200),u.id));}catch(e){fail(400,e.message);}
+      }
+      if (req.method === 'POST' && ['/api/ckd/pair/check','/api/ckd/pair/save'].includes(path)) {
+        const b=await jsonBody(req);if(path.endsWith('/save'))writeAccess(u);
+        try {const result=path.endsWith('/save')?saveCkd(db,b,u.id):checkCkd(db,b);return send(res,path.endsWith('/save')&&!result.duplicate?201:200,result);}catch(e){fail(400,e.message);}
+      }
+      if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export'].includes(path)) {
+        const workbook=Number(url.searchParams.get('workbook_id'));if(!Number.isSafeInteger(workbook)||workbook<1)fail(400,'Chọn file SO.');
+        const rows=db.prepare('SELECT c.id,c.box_ref,c.samsung,c.item_code,c.status,c.qty,c.counted,c.snapshot,c.created_at,u.name scanner FROM ckd_checks c JOIN users u ON u.id=c.user_id WHERE workbook_id=? ORDER BY c.id DESC LIMIT 5000').all(workbook).map(r=>({...r,check:JSON.parse(r.snapshot),snapshot:undefined}));
+        if(path.endsWith('/history'))return send(res,200,{checks:rows.slice(0,200),totals:db.prepare('SELECT c.samsung,COUNT(*) boxes,SUM(c.qty) total,(SELECT SUM(selling_qty) FROM ckd_orders o WHERE o.workbook_id=c.workbook_id AND o.samsung=c.samsung) target FROM ckd_checks c WHERE c.workbook_id=? AND c.counted=1 GROUP BY c.samsung').all(workbook)});
+        const bytes=excel([['Box','Samsung','ITEM','Kết quả','MOQ box','Cộng số lượng','Item','Description','Model Vendor','SO Maker','Selling Qty','Tổng sau box','Người quét','Thời gian UTC'],...rows.map(r=>[r.box_ref,r.samsung,r.item_code,r.status,r.qty,r.counted?'Có':'Không',r.check.model?.item||'',r.check.model?.description||'',r.check.model?.maker||'',r.check.order?.so_maker||'',r.check.target,r.counted?r.check.after:r.check.total,r.scanner,r.created_at])]);
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(bytes);return;
+      }
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
         const field=url.searchParams.get('field')||'all';

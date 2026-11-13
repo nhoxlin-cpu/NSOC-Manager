@@ -1,3 +1,4 @@
+import { renderCkd } from '/ckd.js?v=20261113-8';
 import { PhoneScanner, zxing } from '/scanner.js?v=20261113-7';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -357,20 +358,8 @@ async function materials(id) {
 function downloadText(name, text) { const url = URL.createObjectURL(new Blob([text], { type:'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }
 
 async function ckd() {
-  if (!state.user) { $('#main').innerHTML = needsLogin('Kiểm tra CKD'); return; }
-  $('#main').innerHTML = `${pageTop('Kiểm tra CKD', 'Đối chiếu hai nhãn · Xác nhận từng box', '<a class="button small" href="/api/export?kind=boxes">' + icon('download') + ' Xuất Excel</a>')}<div class="columns"><section class="panel">${readOnlyNote()}<h2>Thông tin đối chiếu</h2><form id="ckd-form">${field('Phiếu / lô nhận hàng','delivery',{placeholder:'VD: PN-2026-001',extra:'maxlength="200"'})}${field('ITEM code','item_code',{placeholder:'Mã ITEM trong MM',extra:'maxlength="200"'})}${field('Barcode nhãn Samsung','label_a',{placeholder:'Quét nhãn thứ nhất',extra:'maxlength="500"'})}${field('Barcode nhãn đối chiếu','label_b',{placeholder:'Quét nhãn thứ hai',extra:'maxlength="500"'})}<div class="field-row">${field('Maker trên nhãn','maker',{placeholder:'VD: YAGEO',extra:'maxlength="200"'})}${field('MOQ box','qty',{type:'number',placeholder:'Số lượng trong box',extra:'min="1" max="1000000000" step="1" inputmode="numeric"'})}</div>${field('Mã box duy nhất trong phiếu/lô','box_ref',{placeholder:'Mã riêng của box, tránh xác nhận trùng',extra:'maxlength="200"'})}<p class="form-message" role="alert"></p><button class="button primary full" type="submit">${icon('ckd')} Đối chiếu hai nhãn</button></form></section><div><section class="panel"><h2>Quy tắc kiểm tra hiện tại</h2><div class="notice">Đối chiếu chính xác toàn bộ barcode sau khi bỏ khoảng trắng ở hai đầu và chuyển thành chữ hoa. Hai nhãn phải cùng khớp mã Samsung trong MM; Maker phải khớp Maker MM.</div><p class="muted">Mỗi phiếu/lô có tổng số lượng riêng theo ITEM. Một mã box chỉ được xác nhận một lần trong cùng phiếu/lô. Server kiểm tra lại tổng số lượng ngay khi xác nhận để tránh cộng trùng giữa các thiết bị.</p><p class="muted">Nếu hai nhãn thực tế có định dạng khác nhau hoặc MM có nhiều Maker, cần bổ sung quy tắc nghiệp vụ trước khi sử dụng quy trình đó.</p><a href="#mm" class="button small">${icon('search')} Xem danh mục MM</a></section><section class="panel"><h3>Xác nhận có kiểm soát</h3><p class="muted no-margin">Không tự xác nhận nếu thiếu MM, nhãn không khớp hoặc tổng sau box vượt Selling Q’ty. Số lượng Selling Q’ty hiện được lấy từ MM; cần cập nhật đúng phiếu nhận trước khi làm việc.</p></section></div></div>`;
-  scanFlowBar($('#ckd-form').closest('.panel'));fieldCamera('item_code','CKD · ITEM code',fillItemCode);fieldCamera('label_a','CKD · Nhãn Samsung');fieldCamera('label_b','CKD · Nhãn đối chiếu');fieldCamera('box_ref','CKD · Mã box');scanFieldEnter(['item_code','label_a','label_b','box_ref']);
-  formAction('#ckd-form', async body => {
-    const r = await api('/ckd/check', { method:'POST', data:body });
-    detail('Bảng check CKD', `<div class="result-banner ${r.pass ? '' : 'fail'}">${r.pass ? 'PASS · Hai nhãn khớp' : 'Chưa đạt · Cần kiểm tra lại'}</div><p class="result-info">Samsung: <strong>${escape(body.label_a)}</strong><br>ITEM code: <strong>${escape(body.item_code)}</strong></p>${r.material ? `<hr class="divider"><dl class="detail-list">${[['Item',r.material.item],['Description',r.material.description],['Maker',r.material.maker],['Vendor',r.material.vendor || '—'],['Location',r.material.location || '—'],['Selling Q’ty',number(r.material.selling_qty)],['MOQ box',number(r.qty)],['Đã xác nhận',number(r.total)],['Sau box này',number(r.after)]].map(([k,v]) => `<dt>${k}</dt><dd>${escape(v)}</dd>`).join('')}</dl><div class="notice ${r.over ? 'error' : r.pass ? 'success' : 'warning'}"><strong>${escape(r.reason)}</strong><br>Phiếu/lô: ${escape(body.delivery)} · Đã xác nhận: ${r.boxes} box${r.over ? `<br>VƯỢT ${number(r.after - r.material.selling_qty)} · Chưa thể xác nhận box.` : ''}</div>` : `<div class="notice warning">${escape(r.reason)}</div>`}<div class="actions equal">${button('Để sau','ckd-later')}<button id="ckd-confirm" class="button primary" ${r.pass && !r.over && canWrite() ? '' : 'disabled'}>Xác nhận box</button></div><p class="form-message" id="ckd-error" role="alert"></p>`);
-    $('#ckd-later').onclick = () => $('#detail-dialog').close();
-    const payload = { ...body, request_id:crypto.randomUUID() };
-    $('#ckd-confirm').onclick = async e => {
-      const btn = e.currentTarget; btn.disabled = true;
-      try { const result = await api('/ckd/confirm', { method:'POST', data:payload }); $('#detail-dialog').close(); toast(result.duplicate ? 'Box này đã được lưu trước đó; không cộng thêm.' : `Đã xác nhận box. Tổng phiếu/lô: ${number(result.total)}.`); $('#box_ref').value = ''; $('#box_ref').focus(); }
-      catch(e) { $('#ckd-error').textContent = e.message; btn.disabled = false; }
-    };
-  });
+  if (!state.user) { $('#main').innerHTML = needsLogin('CKD'); return; }
+  await renderCkd({api,PhoneScanner,state,escape,number,field,button,icon,pageTop,toast,detail,canWrite,scanFlowBar,setContinuousScan,stopCamera});
 }
 
 async function holding(id) {

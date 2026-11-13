@@ -1,3 +1,4 @@
+import { importCkdWorkbook } from '../lib/ckd.mjs';
 import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
@@ -265,6 +266,21 @@ test('MM CSV Spec header maps to description and remains available to Spec looku
   const csv=header.replace('description','Spec')+'\nSPEC-ALIAS,SPEC-BAR,Resistor,10K 1% 1608,Maker,Vendor,A1,1000,100';
   assert.equal((await request('/api/materials/import',admin,'POST',{csv})).status,200);
   const result=await request('/api/materials?field=spec&q='+encodeURIComponent('10k 1% 1608'),viewer);assert.equal(result.data.materials[0].item_code,'SPEC-ALIAS');assert.equal(result.data.materials[0].description,'10K 1% 1608');
+});
+
+test('CKD pair routes enforce authentication, CSRF and roles; history and export retain Description and quantity state',async()=>{
+  const w=importCkdWorkbook(db,{models:[{samsung:'BN83-90000A',items:'ITEM-PAIR',item:'CAP',description:'Test description',maker:'MAKER',moq_text:'100',moq:100}],orders:[{samsung:'BN83-90000A',so_no:'1',items:'ITEM-PAIR',selling_code:'ITEM-PAIR',selling_qty:100,so_maker:'MAKER',maker:'MAKER',vendor:'V',type:'Local'}],missing_moq:0},'API test order',1);
+  const pair={workbook_id:w.id,samsung:'BN83-90000A',item_code:'ITEM-PAIR',request_id:randomUUID(),box_ref:'PAIR-BOX'};
+  assert.equal((await request('/api/ckd/workbooks')).status,401);
+  assert.equal((await request('/api/ckd/pair/check',viewer,'POST',pair)).data.pass,true);
+  assert.equal((await request('/api/ckd/pair/save',viewer,'POST',pair)).status,403);
+  assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair,{'X-CSRF-Token':'wrong'})).status,403);
+  assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair)).status,201);
+  assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair)).status,200);
+  const history=await request('/api/ckd/history?workbook_id='+w.id,viewer);assert.equal(history.data.checks[0].check.quantity_status,'Đủ');assert.equal(history.data.totals[0].total,100);assert.equal(history.data.totals[0].target,100);
+  const exported=await fetch(base+'/api/ckd/export?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(exported.status,200);assert.match(Buffer.from(await exported.arrayBuffer()).toString(),/Test description/);
+  assert.equal((await request('/api/ckd/import',viewer,'POST',{name:'bad.xlsx',file:'invalid'})).status,403);
+  assert.equal((await request('/api/ckd/import',inspector,'POST',{name:'bad.xlsx',file:'data:application/octet-stream;base64,YmFk'})).status,400);
 });
 
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
