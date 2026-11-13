@@ -38,11 +38,19 @@ function connection(ok) {
   state.connected = ok; const el = $('#connection');
   el.classList.toggle('offline', !ok); $('span', el).textContent = ok ? 'Server đã kết nối' : 'Chưa kết nối server';
 }
-async function api(path, { method = 'GET', data, timeoutMs = 20000 } = {}) {
+async function api(path, { method = 'GET', data, file, timeoutMs = 20000 } = {}) {
   let response;
-  try { response = await fetch('/api' + path, { method, credentials: 'same-origin', headers: { ...(data ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && state.csrf ? { 'X-CSRF-Token': state.csrf } : {}) }, body: data ? JSON.stringify(data) : undefined, signal: AbortSignal.timeout(timeoutMs) }); }
+  try { response = await fetch('/api' + path, { method, credentials: 'same-origin', headers: { ...(file ? { 'Content-Type':'application/octet-stream','X-MM-File-Name':encodeURIComponent(file.name) } : data ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && state.csrf ? { 'X-CSRF-Token': state.csrf } : {}) }, body: file || (data ? JSON.stringify(data) : undefined), signal: AbortSignal.timeout(timeoutMs) }); }
   catch { connection(false); const error = new Error('Chưa kết nối được server. Vui lòng kiểm tra mạng.'); error.network = true; throw error; }
-  connection(true); const result = await response.json();
+  if(response.status===401&&path!=='/login'){state.user=null;state.csrf=null;}
+  let result;
+  try{result=await response.json();if(!result||typeof result!=='object'||Array.isArray(result))throw Error('Invalid response');}
+  catch{
+    connection(false);
+    const messages={408:'Tải file quá thời gian máy chủ cho phép. Kiểm tra mạng và thử lại.',413:'File vượt dung lượng máy chủ cho phép.',502:'Kết nối tới máy chủ bị ngắt. Vui lòng thử lại.',503:'Máy chủ đang bận. Vui lòng thử lại.',504:'Máy chủ xử lý quá thời gian. Vui lòng thử lại.'};
+    const error=new Error(messages[response.status]||'Chưa nhận được đầy đủ kết quả từ máy chủ. Vui lòng thử lại.');error.status=response.status;error.network=response.ok||[408,502,503,504].includes(response.status);throw error;
+  }
+  connection(true);
   if (!response.ok) {
     if (response.status === 401 && path !== '/login') { state.user = null; state.csrf = null; }
     const error = new Error(result.error || 'Không thể thực hiện thao tác.'); error.status = response.status; error.code=result.code; error.count=result.count; throw error;
@@ -145,7 +153,6 @@ async function account() {
   shortcutSettings();
   if (u.role === 'admin') await usersList();
 }
-function fileDataURL(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('Không đọc được file.'));reader.readAsDataURL(file);});}
 function mmImportSettings(target=$('.account-layout'),open=false){
   if(state.user?.role!=='admin')return;
   const panel=document.createElement('section');panel.className='panel';panel.id='mm-settings';
@@ -157,8 +164,7 @@ function mmImportSettings(target=$('.account-layout'),open=false){
     const csv=/\.csv$/i.test(file.name);if(file.size>(csv?2_000_000:32*1024*1024))throw Error(csv?'CSV tối đa 2 MB.':'Excel tối đa 32 MB.');
     if(!/\.(xls|xlsx|csv)$/i.test(file.name))throw Error('Chọn file .xls, .xlsx hoặc .csv.');
     $('#mm-import-status',panel).textContent=csv?'Đang nhập CSV…':'Đang tải và đọc tất cả sheet. Vui lòng giữ trang mở…';
-    const data=csv?{csv:await file.text()}:{file:await fileDataURL(file),name:file.name};
-    let result;try{result=await api('/materials/import',{method:'POST',data,timeoutMs:180000});}catch(e){$('#mm-import-status',panel).textContent='Chưa xác nhận được kết quả nhập.';throw e;}
+    let result;try{result=csv?await api('/materials/import',{method:'POST',data:{csv:await file.text()},timeoutMs:420000}):await api('/materials/import-file',{method:'POST',file,timeoutMs:420000});}catch(e){$('#mm-import-status',panel).textContent='Chưa xác nhận được kết quả nhập.';throw e;}
     form.reset();
     $('#mm-import-status',panel).textContent=`Đã nhập ${number(result.count)} dòng MM.`;
     if(result.sheets){

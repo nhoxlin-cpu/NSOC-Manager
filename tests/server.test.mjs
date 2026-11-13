@@ -10,6 +10,7 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import XLSX from '../lib/vendor/sheetjs-0.20.3.cjs';
+import { request as httpRequest } from 'node:http';
 
 let db, server, base, admin, inspector, viewer;
 const password = 'only-a-test-password-2026';
@@ -34,6 +35,7 @@ before(async () => {
   db = openDatabase(':memory:'); const hash = await hashPassword(password);
   for (const role of ['admin','inspector','viewer']) db.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run(role, role, hash, role);
   server = await createApp({ db, origin:'http://work-area.test', production:false });
+  server.connectionsCheckingInterval=50;
   await new Promise(resolve => server.listen(0,'127.0.0.1',resolve));
   base = 'http://127.0.0.1:' + server.address().port;
   admin = await login('admin'); inspector = await login('inspector'); viewer = await login('viewer');
@@ -304,6 +306,30 @@ test('Excel MM import authorizes uploads, imports every sheet atomically and sha
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Not MM data']]),'Bad Sheet');
   assert.equal((await request('/api/materials/import',admin,'POST',body())).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM mm_inventory').get().n,before);
   assert.equal((await request('/api/materials?offset=-1',viewer)).status,400);
+});
+
+test('raw Excel upload validates roles, CSRF, MIME and filename and imports all sheets',async()=>{
+  const wb=XLSX.utils.book_new(),columns=['LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY'];
+  for(let i=1;i<=3;i++)XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([columns,['A1','RAW-ITEM','Raw item','Spec','RAW-BAR-'+i,2.5]]),'Sheet '+i);
+  const bytes=Buffer.from(XLSX.write(wb,{type:'buffer',bookType:'xlsx'}));
+  const upload=(session,extra={},body=bytes)=>fetch(base+'/api/materials/import-file',{method:'POST',headers:{Cookie:session.cookie,'X-CSRF-Token':session.csrf,'Content-Type':'application/octet-stream','X-MM-File-Name':encodeURIComponent('MM sample.xlsx'),...extra},body});
+  assert.equal((await upload(viewer)).status,403);assert.equal((await upload(admin,{'X-CSRF-Token':'wrong'})).status,403);
+  assert.equal((await upload(admin,{'Content-Type':'application/json'})).status,415);assert.equal((await upload(admin,{'X-MM-File-Name':'%invalid'})).status,400);
+  assert.equal((await upload(admin,{},Buffer.alloc(0))).status,400);
+  const response=await upload(admin);assert.equal(response.status,200);const result=await response.json();assert.equal(result.count,3);assert.deepEqual(result.sheets.map(s=>s.rows),[1,1,1]);
+});
+
+test('raw MM upload remains open beyond the previous 30-second request deadline',{timeout:45000},async()=>{
+  const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY'],['A1','SLOW-ITEM','Slow item','Spec','SLOW-BAR',1.5]]),'MM');
+  const bytes=Buffer.from(XLSX.write(wb,{type:'buffer',bookType:'xlsx'})),size=Math.ceil(bytes.length/33);
+  const result=await new Promise((resolve,reject)=>{
+    let offset=0,timer;const req=httpRequest(base+'/api/materials/import-file',{method:'POST',headers:{Cookie:admin.cookie,'X-CSRF-Token':admin.csrf,'Content-Type':'application/octet-stream','X-MM-File-Name':'slow.xlsx','Content-Length':bytes.length}},res=>{
+      let body='';res.on('data',chunk=>body+=chunk);res.on('end',()=>resolve({status:res.statusCode,body}));res.on('error',reject);
+    });
+    req.on('error',reject);req.on('close',()=>clearInterval(timer));
+    timer=setInterval(()=>{req.write(bytes.subarray(offset,offset+size));offset+=size;if(offset>=bytes.length){clearInterval(timer);req.end();}},1000);
+  });
+  assert.equal(result.status,200);assert.equal(JSON.parse(result.body).count,1);
 });
 
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
