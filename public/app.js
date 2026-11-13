@@ -1,5 +1,5 @@
-import { renderCkd } from '/ckd.js?v=20261113-10';
-import { PhoneScanner, zxing } from '/scanner.js?v=20261113-mm10';
+import { renderCkd } from '/ckd.js?v=20261113-12';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261113-mm13';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -374,7 +374,7 @@ function downloadText(name, text) { const url = URL.createObjectURL(new Blob([te
 
 async function ckd() {
   if (!state.user) { $('#main').innerHTML = needsLogin('CKD'); return; }
-  await renderCkd({api,PhoneScanner,state,escape,number,field,button,icon,pageTop,toast,detail,canWrite,scanFlowBar,setContinuousScan,stopCamera});
+  await renderCkd({api,PhoneScanner,state,escape,number,field,button,icon,pageTop,toast,detail,canWrite,scanFlowBar,setContinuousScan,stopCamera,updateCaptureUI,showScanCode});
 }
 
 async function holding(id) {

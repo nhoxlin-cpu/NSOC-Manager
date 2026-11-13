@@ -271,7 +271,8 @@ test('MM CSV Spec header maps to description and remains available to Spec looku
 
 test('CKD pair routes enforce authentication, CSRF and roles; history and export retain Description and quantity state',async()=>{
   const w=importCkdWorkbook(db,{models:[{samsung:'BN83-90000A',items:'ITEM-PAIR',item:'CAP',description:'Test description',maker:'MAKER',moq_text:'100',moq:100}],orders:[{samsung:'BN83-90000A',so_no:'1',items:'ITEM-PAIR',selling_code:'ITEM-PAIR',selling_qty:100,so_maker:'MAKER',maker:'MAKER',vendor:'V',type:'Local'}],missing_moq:0},'API test order',1);
-  const pair={workbook_id:w.id,samsung:'BN83-90000A',item_code:'ITEM-PAIR',request_id:randomUUID(),box_ref:'PAIR-BOX'};
+  const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOuIAAAAASUVORK5CYII=';
+  const pair={workbook_id:w.id,samsung:'BN83-90000A',item_code:'ITEM-PAIR',request_id:randomUUID(),box_ref:'PAIR-BOX',session_name:'Pair session',images:{samsung:image,item:image}};
   assert.equal((await request('/api/ckd/workbooks')).status,401);
   assert.equal((await request('/api/ckd/pair/check',viewer,'POST',pair)).data.pass,true);
   assert.equal((await request('/api/ckd/pair/save',viewer,'POST',pair)).status,403);
@@ -279,6 +280,11 @@ test('CKD pair routes enforce authentication, CSRF and roles; history and export
   assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair)).status,201);
   assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair)).status,200);
   const history=await request('/api/ckd/history?workbook_id='+w.id,viewer);assert.equal(history.data.checks[0].check.quantity_status,'Đủ');assert.equal(history.data.totals[0].total,100);assert.equal(history.data.totals[0].target,100);
+  assert.equal(history.data.checks[0].samsung_image,1);assert.equal(history.data.checks[0].item_image,1);assert.equal(history.data.checks[0].check.session_name,'Pair session');
+  const photo='/api/ckd/checks/'+history.data.checks[0].id+'/image/samsung';assert.equal((await request(photo)).status,401);
+  const photoResponse=await fetch(base+photo,{headers:{Cookie:viewer.cookie}});assert.equal(photoResponse.status,200);assert.equal(photoResponse.headers.get('content-type'),'image/png');
+  assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_check_images').get().n,2,'Retry must not duplicate image attachments');
+  assert.equal((await request('/api/ckd/pair/save',inspector,'POST',{...pair,request_id:randomUUID(),box_ref:'BAD-IMAGE',images:{samsung:'data:text/html;base64,PHNjcmlwdD4='}})).status,400);
   const exported=await fetch(base+'/api/ckd/export?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(exported.status,200);assert.match(Buffer.from(await exported.arrayBuffer()).toString(),/Test description/);
   assert.equal((await request('/api/ckd/import',viewer,'POST',{name:'bad.xlsx',file:'invalid'})).status,403);
   assert.equal((await request('/api/ckd/import',inspector,'POST',{name:'bad.xlsx',file:'data:application/octet-stream;base64,YmFk'})).status,400);
