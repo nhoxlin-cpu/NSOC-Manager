@@ -1,0 +1,120 @@
+# Work Area — IQC
+
+Ứng dụng quản lý vật tư, quét mã và kiểm tra IQC bằng Node.js + SQLite. Giao diện tiếng Việt, hỗ trợ điện thoại và máy tính.
+
+## Chức năng
+
+- Đăng nhập, hồ sơ, đổi mật khẩu và phân quyền `admin`, `inspector`, `viewer` tại server.
+- Quét HS / Stock / Label bằng bàn phím, máy scan hoặc camera điện thoại.
+- Camera toàn màn hình: Barcode / QR, quét liên tục, tự lưu mã mới, cảnh báo trùng, đếm lượt; zoom, flash, âm thanh, rung và đổi camera khi thiết bị hỗ trợ.
+- Giữ một mã trước camera không tạo thêm lượt liên tục. Mã đã có chỉ được lưu thêm khi người dùng chủ động chọn.
+- Kiểm tra trùng toàn bộ lịch sử dùng chung theo loại quét, kể cả khi hai thiết bị quét cùng lúc.
+- Giữ lượt quét bằng IndexedDB khi mất mạng và đồng bộ thủ công, chống ghi lặp khi gửi lại yêu cầu.
+- Lưu ảnh label đính kèm, xem lịch sử và xuất báo cáo `.xlsx`.
+- Nhập danh mục MM từ CSV UTF-8, tra ITEM / Samsung / Maker / Location.
+- CKD: đối chiếu hai nhãn và Maker với MM, xác nhận box theo phiếu/lô, chặn box trùng và số lượng vượt mục tiêu.
+- Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
+
+## Yêu cầu
+
+Node.js **24.11.1 hoặc bản vá mới hơn trong dòng 24**. Server không cần cài thư viện npm bên ngoài. `node:sqlite` ở bản Node nền 24.11.1 có cảnh báo experimental.
+
+```sh
+node scripts/create-user.mjs
+node server.mjs
+```
+
+Tạo tài khoản đầu tiên với quyền **admin**; mật khẩu 8–128 ký tự, nhập riêng tại terminal. Không có tài khoản hoặc mật khẩu mặc định.
+
+Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và lưu database tại `data/work-area.sqlite`.
+
+## Kiểm tra
+
+```sh
+node --test tests/*.test.mjs
+```
+
+15 bài kiểm tra server bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu và định dạng Excel.
+
+Giao diện camera đã được thử bằng video mô phỏng và giải mã ảnh QR / Code128. Hoạt động flash, zoom và rung trên phần cứng thật phụ thuộc thiết bị/trình duyệt.
+
+## Cài với Docker trên Linux
+
+Cần Docker Engine, Compose và một tên miền trỏ về VPS.
+
+```sh
+cp .env.example .env
+```
+
+Sửa `DOMAIN` thành tên miền thật, không kèm `https://`, và điền `ACME_EMAIL`. Cho phép cổng 80/443 tới Caddy; không mở cổng backend 3000.
+
+```sh
+docker compose config --quiet
+docker compose up -d --build
+docker compose exec app node scripts/create-user.mjs
+```
+
+Mở `https://TEN-MIEN-CUA-BAN` sau khi Caddy cấp được chứng chỉ hợp lệ. Cấu hình dùng một tiến trình app, database và ảnh trong volume `work_area_data`.
+
+Nếu VPS có web server khác đang dùng cổng 80/443, cần ghép hostname vào proxy hiện có thay vì chạy thêm Caddy dùng cùng cổng. Không dùng `docker compose down -v` khi cần giữ dữ liệu.
+
+## Chạy native trên Windows hoặc Linux
+
+Dự án chạy trực tiếp bằng Node. Khi phục vụ Internet, cấu hình môi trường:
+
+| Biến | Giá trị / mục đích |
+| --- | --- |
+| `NODE_ENV` | `production` |
+| `APP_ORIGIN` | Origin HTTPS chính xác, ví dụ `https://iqc.example.com`, không có `/` cuối |
+| `HOST` | `127.0.0.1` khi dùng reverse proxy trên cùng máy |
+| `PORT` | Mặc định `3000` |
+| `DB_PATH` | Đường dẫn SQLite riêng tư, ngoài vùng public |
+
+Khởi động `node server.mjs` bằng trình quản lý dịch vụ của hệ điều hành. Chuyển tiếp hostname HTTPS tới backend. Server từ chối origin HTTP ở chế độ production và đặt cookie Secure. Thiết lập tài khoản hệ điều hành, quyền thư mục, proxy và startup service theo môi trường thực tế; cấu hình quản trị riêng của VPS không được lưu trong repository này.
+
+## Dữ liệu MM
+
+Dùng `examples/mm-template.csv`, hoặc tải CSV mẫu từ giao diện quản trị. Lưu CSV UTF-8 từ Excel, dấu phẩy phân cách cột:
+
+| Cột | Nội dung |
+| --- | --- |
+| `item_code` | Mã ITEM duy nhất |
+| `samsung` | Toàn bộ barcode đối chiếu, duy nhất |
+| `item` | Tên hàng |
+| `description` | Mô tả |
+| `maker` | Một Maker chính xác |
+| `vendor` | Nhà cung cấp, có thể trống |
+| `location` | Vị trí, có thể trống |
+| `selling_qty` | Số lượng mục tiêu, số nguyên dương |
+| `moq` | Số lượng chuẩn trong box, số nguyên dương |
+
+Tối đa 2 MB và 10.000 dòng mỗi lượt. Ô có dấu phẩy cần đặt trong dấu nháy. Một dòng không hợp lệ sẽ hủy toàn bộ batch. Nhập lại ITEM cập nhật ITEM đó, không xóa các ITEM khác.
+
+## Sao lưu
+
+```sh
+node scripts/backup.mjs
+```
+
+Lệnh dùng cùng `DB_PATH` với server và tạo snapshot nhất quán dưới thư mục `backups` cạnh database. Với Docker:
+
+```sh
+docker compose exec app node scripts/backup.mjs
+```
+
+Giữ bản sao riêng tư ngoài VPS và kiểm tra khả năng khôi phục. Database chứa người dùng đã băm mật khẩu, phiên đăng nhập, dữ liệu công việc và ảnh.
+
+## Giới hạn hiện tại
+
+- Chưa có OCR ảnh, chatbot AI hoặc bảng quy đổi AI ↔ MI cho cắt chân linh kiện.
+- CKD hiện so khớp chính xác hai barcode sau khi bỏ khoảng trắng ở hai đầu và chuyển chữ hoa; Maker phải khớp một Maker trong MM. Chưa phân tích định dạng hai nhãn khác nhau hoặc nhiều Maker.
+- Selling Q’ty hiện lấy từ MM làm mục tiêu cho từng ITEM trong mỗi phiếu/lô, chưa có nghiệp vụ đơn hàng/SO riêng.
+- Không có service worker; hàng chờ giúp giữ lượt quét khi ứng dụng đã mở, không bảo đảm mở lại trang khi hoàn toàn mất mạng.
+- Chưa có tự đăng ký, khôi phục mật khẩu qua email, giao diện khóa người dùng hoặc thay đổi vai trò.
+- Chưa kiểm thử tải lớn hoặc mọi loại thiết bị camera.
+
+## Phạm vi repository
+
+Repository chứa mã nguồn, test, CSV mẫu không có dữ liệu và cấu hình triển khai mẫu. `.env`, SQLite, ảnh quét, backups, phiên đăng nhập và thiết lập quản trị riêng của VPS được giữ ngoài Git.
+
+Bộ đọc dự phòng `@zxing/library` 0.21.3 được self-host trong `public/vendor`. Các thông báo và giấy phép Apache-2.0 / MIT nằm trong cùng thư mục.
