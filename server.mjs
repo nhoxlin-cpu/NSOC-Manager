@@ -6,6 +6,7 @@ import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
 import { parseCSV, excel } from './lib/formats.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
+import { stockData } from './lib/stock-data.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -76,7 +77,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'scan-evidence-20261113-5' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'hs-stock-mm-20261113-6' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -154,16 +155,17 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       });
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
-        return send(res, 200, { materials: db.prepare('SELECT * FROM materials WHERE instr(lower(item_code || samsung || item || maker || location), lower(?)) > 0 ORDER BY item_code LIMIT 200').all(q), total: db.prepare('SELECT COUNT(*) n FROM materials').get().n });
+        return send(res, 200, { materials: db.prepare('SELECT m.*,st.qty,st.lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE instr(lower(m.item_code || m.samsung || m.item || m.maker || m.location || m.vendor), lower(?)) > 0 ORDER BY m.item_code LIMIT 200').all(q), total: db.prepare('SELECT COUNT(*) n FROM materials').get().n });
       }
       if (req.method === 'POST' && path === '/api/materials/import') {
         adminAccess(u); const b = await jsonBody(req);
         if (typeof b.csv !== 'string' || b.csv.length > 2_000_000) fail(400, 'CSV tối đa 2 MB.');
         let rows;
         try { rows = parseCSV(b.csv); } catch (e) { fail(400, e.message); }
-        const headers = rows.shift();
+        const aliases={item_nm:'item',item_name:'item',mark:'maker',barcode:'samsung'};
+        const headers = rows.shift()?.map(value=>{const key=value.trim().toLowerCase().replace(/\s+/g,'_');return aliases[key]||key;});
         const keys = ['item_code', 'samsung', 'item', 'description', 'maker', 'vendor', 'location', 'selling_qty', 'moq'];
-        if (!headers || headers.length !== keys.length || keys.some(k => !headers.includes(k))) fail(400, `Cột CSV cần đủ và không trùng: ${keys.join(', ')}`);
+        if (!headers || new Set(headers).size!==headers.length || keys.some(k => !headers.includes(k)) || headers.some(k=>![...keys,'qty','lot_no'].includes(k))) fail(400, `Cột CSV cần đủ và không trùng: ${keys.join(', ')}; có thể thêm qty, lot_no.`);
         if (!rows.length || rows.length > 10000) fail(400, 'CSV cần có từ 1 đến 10.000 dòng.');
         const checked = rows.map((row, i) => {
           if (row.length !== headers.length) fail(400, `Dòng ${i + 2}: số cột không đúng.`);
@@ -171,46 +173,59 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
           r.item_code = norm(text(r.item_code, `Dòng ${i + 2}: ITEM`));
           r.samsung = norm(text(r.samsung, `Dòng ${i + 2}: Samsung`));
           r.item = text(r.item, `Dòng ${i + 2}: tên hàng`);
-          r.maker = norm(text(r.maker, `Dòng ${i + 2}: maker`));
+          r.maker = r.maker.trim()?norm(text(r.maker, `Dòng ${i + 2}: maker`)):'';
+          if(!r.maker && !r.vendor.trim())fail(400,`Dòng ${i+2}: cần Maker hoặc Vendor.`);
           for (const k of ['description','vendor','location']) if (r[k].length > 1000) fail(400, `Dòng ${i + 2}: ${k} quá dài.`);
           r.selling_qty = positive(r.selling_qty, `Dòng ${i + 2}: Selling Q’ty`); r.moq = positive(r.moq, `Dòng ${i + 2}: MOQ`);
+          r.qty=r.qty?.trim()?positive(r.qty,`Dòng ${i+2}: QTY Stock`):null;
+          r.lot_no=r.lot_no?.trim()||'';if(r.lot_no.length>200)fail(400,`Dòng ${i+2}: Lot No quá dài.`);
           return r;
         });
         if (new Set(checked.map(r => r.item_code)).size !== checked.length || new Set(checked.map(r => r.samsung)).size !== checked.length) fail(400, 'CSV chứa ITEM hoặc mã Samsung trùng.');
         transaction(db, () => {
           const save = db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(item_code) DO UPDATE SET samsung=excluded.samsung,item=excluded.item,description=excluded.description,maker=excluded.maker,vendor=excluded.vendor,location=excluded.location,selling_qty=excluded.selling_qty,moq=excluded.moq');
-          for (const row of checked) save.run(...keys.map(k => row[k]));
+          const stock=db.prepare('INSERT INTO material_stock(item_code,qty,lot_no) VALUES (?,?,?) ON CONFLICT(item_code) DO UPDATE SET qty=CASE WHEN ? THEN excluded.qty ELSE material_stock.qty END,lot_no=CASE WHEN ? THEN excluded.lot_no ELSE material_stock.lot_no END');
+          for (const row of checked){save.run(...keys.map(k => row[k]));stock.run(row.item_code,row.qty,row.lot_no,headers.includes('qty')?1:0,headers.includes('lot_no')?1:0);}
         });
         return send(res, 200, { count: checked.length });
       }
-      const scanSelect = `SELECT s.id,s.barcode,s.mode,s.quantity,s.created_at,u.name AS scanner,m.item_code,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN materials m ON m.item_code=COALESCE((SELECT item_code FROM materials WHERE samsung=s.barcode),s.barcode)`;
+      const scanSelect = `SELECT s.id,s.barcode,s.mode,s.quantity,s.created_at,u.name AS scanner,COALESCE(ss.item_code,m.item_code) AS item_code,COALESCE(ss.item_name,m.item) AS item_name,COALESCE(ss.maker,m.maker) AS maker,COALESCE(ss.vendor,m.vendor) AS vendor,ss.lot_no,ss.quantity_source,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN scan_stock ss ON ss.scan_id=s.id LEFT JOIN materials m ON m.item_code=COALESCE((SELECT item_code FROM materials WHERE samsung=s.barcode),s.barcode)`;
+      const stockInfo=id=>db.prepare(`${scanSelect} WHERE s.id=?`).get(id);
       const scanCount=(barcode,mode)=>db.prepare('SELECT COUNT(*) n FROM scans WHERE barcode=? AND mode=?').get(barcode,mode).n;
+      const scanMode=()=>{
+        const mode=url.searchParams.get('mode');
+        if(mode!==null && !['HS','Stock','Label'].includes(mode))fail(400,'Loại quét không hợp lệ.');
+        return mode;
+      };
       if (req.method === 'GET' && path === '/api/scans/check') {
         const barcode=norm(text(url.searchParams.get('barcode'),'Barcode',500)),mode=url.searchParams.get('mode');
         if (!['HS','Stock','Label'].includes(mode)) fail(400,'Loại quét không hợp lệ.');
         return send(res,200,{barcode,mode,count:scanCount(barcode,mode),scope:'server'});
       }
       if (req.method === 'GET' && path === '/api/scans') {
+        const mode=scanMode();
         const before = Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER;
-        const rows = db.prepare(`${scanSelect} WHERE s.id < ? ORDER BY s.id DESC LIMIT 100`).all(before);
-        const totals=db.prepare('SELECT COUNT(*) total,SUM(quantity) total_quantity,COUNT(quantity) quantity_count FROM scans').get();
-        return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, ...totals });
+        const rows = db.prepare(`${scanSelect} WHERE s.id < ? AND (? IS NULL OR s.mode=?) ORDER BY s.id DESC LIMIT 100`).all(before,mode,mode);
+        const totals=db.prepare('SELECT COUNT(*) total,SUM(quantity) total_quantity,COUNT(quantity) quantity_count FROM scans WHERE (? IS NULL OR mode=?)').get(mode,mode);
+        return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, mode, ...totals });
       }
       if (req.method === 'POST' && path === '/api/scans') {
         writeAccess(u); const b = await jsonBody(req), id = requestId(b.request_id);
         const previous = db.prepare('SELECT id,user_id,barcode,mode FROM scans WHERE request_id=?').get(id);
-        if (previous) { if (previous.user_id !== u.id) fail(409, 'Mã yêu cầu đã tồn tại.'); return send(res, 200, { id: previous.id, duplicate: true,barcode_count:scanCount(previous.barcode,previous.mode) }); }
+        if (previous) { if (previous.user_id !== u.id) fail(409, 'Mã yêu cầu đã tồn tại.'); return send(res, 200, { id: previous.id, duplicate: true,barcode_count:scanCount(previous.barcode,previous.mode),stock:previous.mode==='Stock'?stockInfo(previous.id):null }); }
         const barcode = norm(text(b.barcode, 'Barcode', 500));
         if (!['HS','Stock','Label'].includes(b.mode)) fail(400, 'Loại quét không hợp lệ.');
         const image = imageData(b.image);
         const result=transaction(db,()=>{
           const before=scanCount(barcode,b.mode);
-          if (b.reject_duplicate === true && before>0) return {blocked:true,count:before};
-          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity) VALUES (?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,scanQuantity(barcode,b.mode));
+          if ((b.mode==='HS' || b.reject_duplicate === true) && before>0) return {blocked:true,count:before};
+          const stock=b.mode==='Stock'?stockData(db,barcode):null;
+          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity) VALUES (?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,stock?.quantity??scanQuantity(barcode,b.mode));
+          if(stock)db.prepare('INSERT INTO scan_stock(scan_id,item_code,item_name,maker,vendor,lot_no,quantity_source) VALUES (?,?,?,?,?,?,?)').run(Number(saved.lastInsertRowid),stock.item_code,stock.item_name,stock.maker,stock.vendor,stock.lot_no,stock.quantity_source);
           return {id:Number(saved.lastInsertRowid),barcode_count:before+1};
         });
         if (result.blocked) return send(res,409,{error:`Mã đã có ${result.count} lượt trên server. Chưa lưu thêm.`,code:'DUPLICATE_SCAN',count:result.count});
-        return send(res,201,result);
+        return send(res,201,{...result,stock:b.mode==='Stock'?stockInfo(result.id):null});
       }
       if (req.method === 'GET' && /^\/api\/scans\/\d+\/image$/.test(path)) {
         const r = db.prepare('SELECT image_type,image FROM scans WHERE id=?').get(Number(path.split('/')[3]));
@@ -223,7 +238,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'GET' && path === '/api/export') {
         const kind = url.searchParams.get('kind') || 'scans'; let rows;
-        if (kind === 'scans') rows = [['STT / ID','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM','Số lượng (QTY)'], ...db.prepare(`${scanSelect} ORDER BY s.id DESC`).all().map(r => [r.id,r.barcode,r.mode,r.scanner,r.created_at,r.item_code || 'Chưa có trong MM',r.quantity ?? ''])];
+        if (kind === 'scans') {const mode=scanMode();rows = [['STT / ID','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM code','Item NM','Số lượng (QTY)','Maker','Vendor','Lot No'], ...db.prepare(`${scanSelect} WHERE (? IS NULL OR s.mode=?) ORDER BY s.id DESC`).all(mode,mode).map(r => [r.id,r.barcode,r.mode,r.scanner,r.created_at,r.item_code || 'Chưa có trong MM',r.item_name||'',r.quantity ?? '',r.maker||'',r.vendor||'',r.lot_no||''])];}
         else if (kind === 'boxes') rows = [['Phiếu/lô','Box','ITEM','Số lượng','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'], ...db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all().map(r => [r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])];
         else if (kind === 'holding') rows = [['ITEM','Location','Số lượng thay đổi','Ghi chú','Người thao tác','Thời gian UTC'], ...db.prepare('SELECT m.*,u.name FROM movements m JOIN users u ON u.id=m.user_id ORDER BY m.id DESC').all().map(r => [r.item_code,r.location,r.qty,r.note,r.name,r.created_at])];
         else fail(400, 'Loại báo cáo không hợp lệ.');

@@ -196,6 +196,53 @@ test('history returns one row when a barcode matches one Samsung code and anothe
   assert.equal(rows.length,1);assert.equal(rows[0].item_code,'CROSS-ITEM-A');
 });
 
+test('mode histories, totals and exports stay separate and reject invalid modes',async()=>{
+  for(const mode of ['HS','Stock','Label'])assert.equal((await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'MODE-ONLY-'+mode.toUpperCase(),mode})).status,201);
+  for(const mode of ['HS','Stock','Label']){
+    const result=await request('/api/scans?mode='+mode,viewer);assert.equal(result.status,200);assert.ok(result.data.scans.every(r=>r.mode===mode));
+    assert.equal(result.data.total,db.prepare('SELECT COUNT(*) n FROM scans WHERE mode=?').get(mode).n);
+    const page=await request('/api/scans?mode='+mode+'&before=3',viewer);assert.ok(page.data.scans.every(r=>r.mode===mode&&r.id<3));assert.equal(page.data.total,result.data.total);
+    if(mode!=='Stock')assert.equal(result.data.total_quantity,null);
+    const file=await fetch(base+'/api/export?kind=scans&mode='+mode,{headers:{Cookie:viewer.cookie}});assert.equal(file.status,200);
+    const contents=Buffer.from(await file.arrayBuffer()).toString();assert.ok(contents.includes('MODE-ONLY-'+mode.toUpperCase()));
+    for(const other of ['HS','Stock','Label'].filter(m=>m!==mode))assert.ok(!contents.includes('MODE-ONLY-'+other.toUpperCase()));
+  }
+  assert.equal((await request('/api/scans?mode=wrong',viewer)).status,400);assert.equal((await request('/api/export?kind=scans&mode=wrong',viewer)).status,400);
+});
+
+test('HS rejects a duplicate even when force saving, with simultaneous devices and idempotent retry',async()=>{
+  const bodies=[{request_id:randomUUID(),barcode:'HS-STRICT-ONE',mode:'HS',reject_duplicate:false},{request_id:randomUUID(),barcode:' hs-strict-one ',mode:'HS',reject_duplicate:false}];
+  const results=await Promise.all(bodies.map(body=>request('/api/scans',inspector,'POST',body)));
+  assert.deepEqual(results.map(r=>r.status).sort(),[201,409]);assert.equal(results.find(r=>r.status===409).data.code,'DUPLICATE_SCAN');
+  const savedIndex=results.findIndex(r=>r.status===201);assert.equal((await request('/api/scans',inspector,'POST',bodies[savedIndex])).status,200);
+  assert.equal((await request('/api/scans',admin,'POST',{...bodies[0],request_id:randomUUID()})).status,409);
+  assert.equal((await request('/api/scans',inspector,'POST',{...bodies[0],request_id:randomUUID(),mode:'Label'})).status,201);
+});
+
+test('Stock resolves MM metadata, snapshots QTY and Lot No, and legacy imports preserve optional columns',async()=>{
+  const csv=header+',qty,lot_no\nSTOCK-MATERIAL,MM-STOCK-CODE,Original item,,MAKER-X,VENDOR-X,A1,10000,500,250,LOT-MM';
+  assert.equal((await request('/api/materials/import',admin,'POST',{csv})).status,200);
+  assert.equal((await request('/api/materials/import',viewer,'POST',{csv})).status,403);
+  const body={request_id:randomUUID(),barcode:'MM-STOCK-CODE',mode:'Stock'};
+  const created=await request('/api/scans',inspector,'POST',body);assert.equal(created.status,201);
+  for(const [key,value] of Object.entries({item_code:'STOCK-MATERIAL',item_name:'Original item',maker:'MAKER-X',vendor:'VENDOR-X',quantity:250,quantity_source:'MM',lot_no:'LOT-MM'}))assert.equal(created.data.stock[key],value,key);
+  const legacy=header+'\nSTOCK-MATERIAL,MM-STOCK-CODE,Updated item,,MAKER-Y,VENDOR-Y,A2,9000,400';
+  assert.equal((await request('/api/materials/import',admin,'POST',{csv:legacy})).status,200);
+  const material=(await request('/api/materials?q=STOCK-MATERIAL',viewer)).data.materials[0];assert.equal(material.qty,250);assert.equal(material.lot_no,'LOT-MM');
+  const previous=(await request('/api/scans?mode=Stock',viewer)).data.scans.find(r=>r.id===created.data.id);assert.equal(previous.item_name,'Original item');assert.equal(previous.maker,'MAKER-X');assert.equal(previous.quantity,250);
+  const label=await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'ITEM=STOCK-MATERIAL;QTY=12;LOT_NO=LOT-LABEL',mode:'Stock'});assert.equal(label.status,201);assert.equal(label.data.stock.quantity,12);assert.equal(label.data.stock.quantity_source,'barcode');assert.equal(label.data.stock.item_name,'Updated item');assert.equal(label.data.stock.lot_no,'LOT-LABEL');
+  const noMM=await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'UNKNOWN-MM-STOCK',mode:'Stock'});assert.equal(noMM.data.stock.item_code,null);assert.equal(noMM.data.stock.quantity,null);
+  assert.equal((await request('/api/materials/import',admin,'POST',{csv:csv.replace(',250,LOT-MM',',-5,LOT-MM')})).status,400);
+  assert.equal((await request('/api/materials?q=STOCK-MATERIAL',viewer)).data.materials[0].qty,250);
+});
+
+test('MM recognizes Item NM and Mark headings and permits Vendor when Maker is absent',async()=>{
+  const csv='Item Code,Barcode,Item NM,Description,Mark,Vendor,Location,Selling_Qty,MOQ,QTY,Lot No\nALIAS-ITEM,ALIAS-BARCODE,Alias name,,,Vendor only,A1,1000,100,20,ALIAS-LOT';
+  assert.equal((await request('/api/materials/import',admin,'POST',{csv})).status,200);
+  const scan=await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'ALIAS-BARCODE',mode:'Stock'});
+  assert.equal(scan.status,201);assert.equal(scan.data.stock.item_name,'Alias name');assert.equal(scan.data.stock.vendor,'Vendor only');assert.equal(scan.data.stock.maker,'');assert.equal(scan.data.stock.quantity,20);assert.equal(scan.data.stock.lot_no,'ALIAS-LOT');
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);
