@@ -5,7 +5,7 @@ import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
-import { parseCSV, excel, streamZip } from './lib/formats.mjs';
+import { parseCSV, excel, streamZip, reportWorkbook } from './lib/formats.mjs';
 import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOverview } from './lib/ckd.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
@@ -82,7 +82,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-maker-report-20261113-14' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'styled-reports-20261113-15' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -176,7 +176,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const workbook=Number(url.searchParams.get('workbook_id')),all=url.searchParams.get('scope')==='all'&&path!=='/api/ckd/history';
         if(!all&&(!Number.isSafeInteger(workbook)||workbook<1))fail(400,'Chon SO.');
         if(path.endsWith('/history')){const report=ckdOverview(db,workbook),before=Number(url.searchParams.get('before'))||0,rows=report.checks.filter(c=>!before||c.id<before),checks=rows.slice(0,200);return send(res,200,{checks,next:rows.length>200?checks.at(-1).id:null,count:report.checks.length,summary:report.summary,unsold:report.unsold,totals:report.summary.filter(g=>g.boxes>0)});}
-        let report;try{report=ckdReport(db,all?0:workbook);}catch(e){fail(400,e.message);}
+        let report;try{report=ckdReport(db,all?0:workbook,{exportedBy:u.name,imageLinks:path.endsWith('.zip')});}catch(e){fail(400,e.message);}
         if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
@@ -284,7 +284,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         else if (kind === 'boxes') rows = [['Phiếu/lô','Box','ITEM','Số lượng','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'], ...db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all().map(r => [r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])];
         else if (kind === 'holding') rows = [['ITEM','Location','Số lượng thay đổi','Ghi chú','Người thao tác','Thời gian UTC'], ...db.prepare('SELECT m.*,u.name FROM movements m JOIN users u ON u.id=m.user_id ORDER BY m.id DESC').all().map(r => [r.item_code,r.location,r.qty,r.note,r.name,r.created_at])];
         else fail(400, 'Loại báo cáo không hợp lệ.');
-        const buffer = excel(rows);
+        const label=kind==='scans'?'Lịch sử quét mã':kind==='holding'?'Giao dịch Holding':'Xác nhận box';
+        const mode=kind==='scans'?(url.searchParams.get('mode')||'Tất cả loại quét'):'';
+        const buffer=reportWorkbook([{name:'Chi tiết',title:label,rows}],{title:'BÁO CÁO '+(kind==='scans'?'QUÉT MÃ':kind==='holding'?'HOLDING':'XÁC NHẬN BOX'),scope:mode,exportedBy:u.name});
         res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="work-area-${kind}.xlsx"` }); return res.end(buffer);
       }
       function checkBox(b) {

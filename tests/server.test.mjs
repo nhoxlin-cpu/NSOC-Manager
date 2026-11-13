@@ -223,7 +223,9 @@ test('HS saves duplicate occurrences with stable results, simultaneous devices a
   const history=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.equal(history.length,3);assert.ok(history.every(r=>r.has_image));
   const original=results.find(r=>r.data.prior_count===0);assert.equal((await request('/api/scans/'+original.data.id,admin,'DELETE')).status,200);
   const remaining=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.ok(remaining.every(r=>r.prior_count>0));
-  const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const xml=Buffer.from(await file.arrayBuffer()).toString();assert.ok(xml.includes('HS-SAVE-ONE'));assert.ok(xml.indexOf('ITEM')<xml.indexOf('Barcode'));assert.ok(xml.indexOf('Barcode')<xml.indexOf('quét'));
+  const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const bytes=Buffer.from(await file.arrayBuffer());assert.ok(bytes.toString().includes('HS-SAVE-ONE'));
+  const report=XLSX.read(bytes,{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets[report.SheetNames[0]],{header:1}),head=rows.find(r=>r.includes('STT / ID'));
+  assert.ok(head.indexOf('ITEM')<head.indexOf('Barcode'));assert.ok(head.indexOf('Barcode')<head.indexOf('Người quét'));
 });
 
 test('Stock resolves MM metadata, snapshots QTY and Lot No, and legacy imports preserve optional columns',async()=>{

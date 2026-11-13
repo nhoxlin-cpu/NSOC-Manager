@@ -36,6 +36,8 @@
 - Lịch sử CKD có ba tab Lượt scan / Theo Samsung / SO chưa scan. Tab chưa scan gồm các mã SO chưa có bất kỳ lượt lưu nào (kể cả NG). Lịch sử lượt quét có tải thêm; tổng theo Samsung và báo cáo tính toàn bộ dữ liệu.
 - Báo cáo Excel có ba sheet tương ứng. Có thể chọn đơn hiện tại hoặc tất cả đơn và tải ZIP chứa report.xlsx cùng toàn bộ ảnh Samsung/ITEM của các lượt đã lưu; ZIP truyền từng ảnh để tránh giữ tất cả ảnh trong RAM. Báo cáo ghi tên ảnh để đối chiếu từng lượt.
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
+- Toàn bộ báo cáo Excel (HS / Stock / Label / CKD / Holding / box) dùng bố cục HANSOL / HEVH: tiêu đề, phạm vi, người xuất, thời gian GMT+7, cột tự định cỡ, ngắt dòng, số có phân cách hàng nghìn và giữ phần thập phân, ngày giờ chuẩn, cố định/lọc đầu bảng, màu PASS/NG và Đủ/Thiếu/Dư. Có thiết lập khổ giấy ngang, lặp tiêu đề và đánh số trang khi in.
+- CKD có sheet Tổng quan trước các sheet chi tiết. ZIP có report.xlsx, hướng dẫn giải nén và liên kết mở ảnh của từng lượt. Mã có số 0 đầu giữ dạng văn bản; nội dung người dùng không được chuyển thành công thức Excel.
 
 ## Yêu cầu
 
@@ -56,7 +58,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-46 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
+49 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, định dạng báo cáo, mã có số 0 đầu, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 

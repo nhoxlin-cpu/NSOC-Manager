@@ -8,4 +8,6 @@ CKD two-code UI lives in `public/ckd.js`; workbook parsing and model/SO checks l
 
 Run `node --test tests/*.test.mjs` and browser checks relevant to the changed workflow. Back up the live database and files before deploying; restart only Work Area. Do not replace the database or reset user accounts as part of a code update.
 
+Every user-facing report must be ready to share with management. Use `reportWorkbook` and the shared `lib/report-layout.mjs` styles: branded title, scope, exporter, GMT+7 timestamp, numeric/date formats, column widths, frozen/filterable headings, status colors and print layout. Keep identifiers as text and preserve decimal quantities. The plain `excel` helper is for raw fixtures or data interchange, not finished reports. CKD reports include an overview; ZIP reports include relative photo links and extraction instructions.
+
 This repository is public. Never commit uploaded workbooks, production data, photos, databases, credentials, real environment configuration or private deployment reports.
