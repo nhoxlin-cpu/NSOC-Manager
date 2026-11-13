@@ -43,6 +43,13 @@ async function jsonBody(req, limit = 5 * 1024 * 1024) {
   try { const value = JSON.parse(Buffer.concat(chunks)); if (!value || Array.isArray(value) || typeof value !== 'object') throw Error(); return value; }
   catch { fail(400, 'Dữ liệu JSON không hợp lệ.'); }
 }
+async function workbookBody(req){
+  if(req.headers['content-type']?.split(';')[0]!=='application/octet-stream')fail(415,'Gửi trực tiếp file Excel .xls hoặc .xlsx.');
+  if(Number(req.headers['content-length'])>MAX_MM_BYTES)fail(413,'File MM tối đa 32 MB.');
+  const chunks=[];let total=0;
+  for await(const chunk of req){total+=chunk.length;if(total>MAX_MM_BYTES)fail(413,'File MM tối đa 32 MB.');chunks.push(chunk);}
+  if(!total)fail(400,'File MM rỗng.');return Buffer.concat(chunks,total);
+}
 function imageData(source) {
   if (!source) return { mime: null, buffer: null };
   if (typeof source !== 'string') fail(400, 'Ảnh không hợp lệ.');
@@ -82,7 +89,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-text-edit-20261113-17' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-upload-20261113-18' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -187,6 +194,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(!Object.hasOwn(fields,field))fail(400,'Chọn Location, Item code hoặc Spec.');
         const offset=Number(url.searchParams.get('offset')||0);if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)fail(400,'Trang tra cứu không hợp lệ.');
         return send(res,200,listMM(db,{q,field,offset}));
+      }
+      if(req.method==='POST'&&path==='/api/materials/import-file'){
+        adminAccess(u);
+        let name;try{name=decodeURIComponent(req.headers['x-mm-file-name']||'');}catch{fail(400,'Tên file không hợp lệ.');}
+        name=text(name,'Tên file',200);
+        const bytes=await workbookBody(req);
+        let parsed;try{parsed=await parseMMInWorker(bytes);}catch(e){fail(400,e.message);}
+        return send(res,200,importMMRows(db,parsed,name));
       }
       if (req.method === 'POST' && path === '/api/materials/import') {
         adminAccess(u); const b = await jsonBody(req,46*1024*1024);
@@ -345,7 +360,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!res.headersSent) send(res, status, { error: message }); else res.end();
     }
   });
-  server.requestTimeout = 30_000; server.headersTimeout = 15_000;
+  server.requestTimeout = 300_000; server.headersTimeout = 15_000;
   return server;
 }
 

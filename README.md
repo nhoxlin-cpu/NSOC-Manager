@@ -60,7 +60,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-51 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, ảnh nhúng và ảnh gốc, tự tạo mã lượt, định dạng báo cáo, mã có số 0 đầu, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
+53 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, ảnh nhúng và ảnh gốc, tự tạo mã lượt, định dạng báo cáo, mã có số 0 đầu, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
@@ -158,3 +158,9 @@ Giới hạn Excel: 100 sheet, 250.000 dòng dữ liệu tổng cộng, 256 cộ
 Dữ liệu Excel MM được lưu theo BARCODE_NO trong bảng tồn chi tiết, tách khỏi danh mục CKD cũ cần Selling Q’ty / MOQ. Tra cứu MM hợp nhất hai nguồn; Stock ưu tiên đúng barcode của MM Excel và lưu snapshot QTY / Lot / Maker / Vendor tại lúc quét. Nhập Excel không sửa workbook SO / model list của CKD.
 
 Bộ đọc SheetJS CE 0.20.3 được vendored tại lib/vendor, kèm giấy phép Apache-2.0 và thông báo nguồn; không cần tải thư viện lúc chạy.
+
+### Tải file MM qua mạng chậm
+
+Giao diện gửi Excel trực tiếp dạng nhị phân, không chuyển sang JSON/base64. Backend cho tối đa 5 phút nhận request (header vẫn 15 giây); giao diện chờ tối đa 7 phút cho tải lên và xử lý. Giới hạn file vẫn 32 MB, chỉ admin và có CSRF hợp lệ mới được nhập. Endpoint JSON cũ vẫn tương thích.
+
+Phản hồi rỗng hoặc không phải JSON (ví dụ timeout 408 / proxy 502) được đổi thành thông báo rõ ràng thay cho lỗi parse JSON. Có bài kiểm tra truyền file chậm vượt ngưỡng 30 giây cũ, cùng kiểm tra định dạng, tên file và phân quyền của endpoint nhận nhị phân.
