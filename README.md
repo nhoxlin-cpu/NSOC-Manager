@@ -24,8 +24,8 @@
 - Lịch sử hiển thị STT / ID, ảnh đối chiếu, QR hoặc Code 128 từ nguyên nội dung mã đã lưu; QR hỗ trợ Unicode, Code 128 dùng ASCII. Bộ tạo mã chạy tại thiết bị, không gửi nội dung sang dịch vụ bên ngoài.
 - Chỉ **Stock** có QTY: lấy trường QTY rõ ràng trong barcode, nếu thiếu thì dùng cột qty trong MM. Không suy từ Selling Q’ty hay MOQ. HS / Label và Stock chưa có nguồn QTY để trống. Tổng theo toàn bộ lịch sử loại quét đang chọn; gửi lại yêu cầu không cộng lặp, xóa lượt quét cập nhật tổng. Lượt Stock cũ giữ QTY đã ghi, không tự gán QTY MM mới cho lịch sử cũ.
 - Xuất lịch sử quét `.xlsx` có STT / ID và cột số lượng.
-- Tra cứu MM có ba lựa chọn Location / Item code / Spec. Nút Xem tìm riêng trong cột được chọn, để trống để xem danh sách; cột đang chọn nằm đầu bảng. Spec dùng description, hỗ trợ tiêu đề CSV Spec. Nhập file là nút tắt tới Cài đặt → Dữ liệu MM dành cho admin.
-- Nhập danh mục MM từ CSV UTF-8 trong menu **Cài đặt → Dữ liệu MM** (thu gọn trong trang tài khoản, chỉ admin). Trang Tra cứu MM không còn biểu mẫu nhập file. Mẫu cũ 9 cột vẫn dùng được; mẫu mới bổ sung qty và lot_no tùy chọn.
+- Tra cứu MM mở bằng 4 thư mục lớn dạng lưới 2 × 2: Location / Item code / Spec / Nhập file (admin). Mỗi thư mục mở một trang riêng có nút quay lại. Ba trang tra cứu có nút Xem, hỗ trợ quét camera và đường dẫn giữ đúng trang khi tải lại. Spec dùng description; CSV nhận tiêu đề Spec.
+- Nhập danh mục MM từ CSV UTF-8 tại **Tra cứu MM → Nhập file**, dành cho admin. **Cài đặt → Dữ liệu MM** vẫn dùng được. Mẫu cũ 9 cột vẫn dùng được; mẫu mới bổ sung qty và lot_no tùy chọn.
 - CKD: đối chiếu hai nhãn và Maker với MM, xác nhận box theo phiếu/lô, chặn box trùng và số lượng vượt mục tiêu.
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
 
@@ -104,7 +104,7 @@ Dùng `examples/mm-template.csv`, hoặc tải CSV mẫu từ giao diện quản
 | `qty` | Tùy chọn: QTY Stock khi barcode không có QTY; trống nếu chưa biết |
 | `lot_no` | Tùy chọn: Lot No Stock khi barcode không có LOT / LOT_NO |
 
-Nhập file tại menu **Cài đặt → Dữ liệu MM**. Các tiêu đề `Item Code`, `Item NM` / `Item Name`, `Barcode`, `Mark`, `Lot No` tương ứng với `item_code`, `item`, `samsung`, `maker`, `lot_no`. Tiêu đề `Spec` tương ứng `description`; không dùng đồng thời hai tiêu đề này trong cùng file. Maker có thể trống nếu có Vendor; CKD vẫn cần Maker để đối chiếu. Mẫu cũ không có qty / lot_no giữ hai giá trị Stock đã lưu; có cột nhưng ô trống thì xóa giá trị tương ứng về chưa xác định.
+Nhập file tại **Tra cứu MM → Nhập file** hoặc **Cài đặt → Dữ liệu MM**. Các tiêu đề `Item Code`, `Item NM` / `Item Name`, `Barcode`, `Mark`, `Lot No` tương ứng với `item_code`, `item`, `samsung`, `maker`, `lot_no`. Tiêu đề `Spec` tương ứng `description`; không dùng đồng thời hai tiêu đề này trong cùng file. Maker có thể trống nếu có Vendor; CKD vẫn cần Maker để đối chiếu. Mẫu cũ không có qty / lot_no giữ hai giá trị Stock đã lưu; có cột nhưng ô trống thì xóa giá trị tương ứng về chưa xác định.
 
 Tối đa 2 MB và 10.000 dòng mỗi lượt. Ô có dấu phẩy cần đặt trong dấu nháy. Một dòng không hợp lệ sẽ hủy toàn bộ batch. Nhập lại ITEM cập nhật ITEM đó, không xóa các ITEM khác.
 
