@@ -225,7 +225,9 @@ test('HS saves duplicate occurrences with stable results, simultaneous devices a
   const history=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.equal(history.length,3);assert.ok(history.every(r=>r.has_image));
   const original=results.find(r=>r.data.prior_count===0);assert.equal((await request('/api/scans/'+original.data.id,admin,'DELETE')).status,200);
   const remaining=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.ok(remaining.every(r=>r.prior_count>0));
-  const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const xml=Buffer.from(await file.arrayBuffer()).toString();assert.ok(xml.includes('HS-SAVE-ONE'));assert.ok(xml.indexOf('ITEM')<xml.indexOf('Barcode'));assert.ok(xml.indexOf('Barcode')<xml.indexOf('quét'));
+  const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const bytes=Buffer.from(await file.arrayBuffer());assert.ok(bytes.toString().includes('HS-SAVE-ONE'));
+  const report=XLSX.read(bytes,{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets[report.SheetNames[0]],{header:1}),head=rows.find(r=>r.includes('STT / ID'));
+  assert.ok(head.indexOf('ITEM')<head.indexOf('Barcode'));assert.ok(head.indexOf('Barcode')<head.indexOf('Người quét'));
 });
 
 test('Stock resolves MM metadata, snapshots QTY and Lot No, and legacy imports preserve optional columns',async()=>{
@@ -272,6 +274,7 @@ test('MM CSV Spec header maps to description and remains available to Spec looku
 });
 
 test('CKD pair routes enforce authentication, CSRF and roles; history and export retain Description and quantity state',async()=>{
+  db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)').run('ITEM-PAIR','MM-PAIR','CAP','MM desc','MAKER','V','A1',100,100);
   const w=importCkdWorkbook(db,{models:[{samsung:'BN83-90000A',items:'ITEM-PAIR',item:'CAP',description:'Test description',maker:'MAKER',moq_text:'100',moq:100}],orders:[{samsung:'BN83-90000A',so_no:'1',items:'ITEM-PAIR',selling_code:'ITEM-PAIR',selling_qty:100,so_maker:'MAKER',maker:'MAKER',vendor:'V',type:'Local'}],missing_moq:0},'API test order',1);
   const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOuIAAAAASUVORK5CYII=';
   const pair={workbook_id:w.id,samsung:'BN83-90000A',item_code:'ITEM-PAIR',request_id:randomUUID(),box_ref:'PAIR-BOX',session_name:'Pair session',images:{samsung:image,item:image}};
@@ -287,9 +290,22 @@ test('CKD pair routes enforce authentication, CSRF and roles; history and export
   const photoResponse=await fetch(base+photo,{headers:{Cookie:viewer.cookie}});assert.equal(photoResponse.status,200);assert.equal(photoResponse.headers.get('content-type'),'image/png');
   assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_check_images').get().n,2,'Retry must not duplicate image attachments');
   assert.equal((await request('/api/ckd/pair/save',inspector,'POST',{...pair,request_id:randomUUID(),box_ref:'BAD-IMAGE',images:{samsung:'data:text/html;base64,PHNjcmlwdD4='}})).status,400);
-  const exported=await fetch(base+'/api/ckd/export?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(exported.status,200);assert.match(Buffer.from(await exported.arrayBuffer()).toString(),/Test description/);
+  const exported=await fetch(base+'/api/ckd/export?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(exported.status,200);const reportBytes=Buffer.from(await exported.arrayBuffer());assert.match(reportBytes.toString(),/Test description/);
+  const report=XLSX.read(reportBytes,{type:'buffer',cellDates:true}),detail=report.Sheets['Luot scan'],head=XLSX.utils.sheet_to_json(detail,{header:1})[6];
+  for(const column of ['STT','Samsung','ITEM','QTY','Bán đủ / dư / thiếu','Vendor','Ảnh Samsung','Ảnh ITEM','Người scan','Giờ scan (GMT+7)'])assert.ok(head.includes(column),column);
+  assert.equal(detail.A8.v,1);assert.equal(detail.D8.v,100);assert.equal(detail.E8.v,'Đủ');assert.equal(detail.F8.v,'V');assert.ok(detail.J8.v instanceof Date);assert.match(reportBytes.toString(),/xl\/media\/report-2-1.png/);assert.ok(!head.includes('Box'));
+  const archive=await fetch(base+'/api/ckd/report.zip?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(archive.status,200);assert.equal(archive.headers.get('content-type'),'application/zip');const zipped=Buffer.from(await archive.arrayBuffer());assert.equal(zipped.readUInt32LE(0),0x04034b50);assert.match(zipped.toString(),/report.xlsx/);assert.match(zipped.toString(),/check-\d+-samsung.png/);assert.match(zipped.toString(),/check-\d+-item.png/);assert.match(zipped.toString(),/SO chua scan/);
+  assert.equal((await request('/api/ckd/report.zip?scope=all')).status,401);
   assert.equal((await request('/api/ckd/import',viewer,'POST',{name:'bad.xlsx',file:'invalid'})).status,403);
   assert.equal((await request('/api/ckd/import',inspector,'POST',{name:'bad.xlsx',file:'data:application/octet-stream;base64,YmFk'})).status,400);
+});
+
+test('CKD occurrence history paginates without losing or repeating scan rows',async()=>{
+  const w=importCkdWorkbook(db,{models:[],orders:[],missing_moq:0},'Pagination fixture',1);
+  const insert=db.prepare('INSERT INTO ckd_checks(request_id,workbook_id,box_ref,samsung,item_code,status,qty,counted,snapshot,user_id) VALUES (?,?,?,?,?,?,?,?,?,?)');
+  for(let i=0;i<205;i++)insert.run(randomUUID(),w.id,'PAGE-'+i,'SAMSUNG-PAGE','ITEM-PAGE','NG',0,0,JSON.stringify({status:'NG',target:0,total:0}),1);
+  const first=(await request('/api/ckd/history?workbook_id='+w.id,viewer)).data;assert.equal(first.checks.length,200);assert.equal(first.count,205);assert.ok(first.next);
+  const second=(await request('/api/ckd/history?workbook_id='+w.id+'&before='+first.next,viewer)).data;assert.equal(second.checks.length,5);assert.equal(second.next,null);assert.equal(new Set([...first.checks,...second.checks].map(c=>c.id)).size,205);
 });
 
 test('Excel MM import authorizes uploads, imports every sheet atomically and shares decimal Stock quantities',async()=>{

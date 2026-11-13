@@ -1,11 +1,12 @@
+import { ckdReport } from './lib/ckd-report.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
-import { parseCSV, excel } from './lib/formats.mjs';
-import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd } from './lib/ckd.mjs';
+import { parseCSV, excel, streamZip, reportWorkbook } from './lib/formats.mjs';
+import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOverview } from './lib/ckd.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
@@ -88,7 +89,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-upload-20261113-14' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-upload-20261113-18' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -173,17 +174,18 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (req.method === 'POST' && ['/api/ckd/pair/check','/api/ckd/pair/save'].includes(path)) {
         const b=await jsonBody(req);if(path.endsWith('/save'))writeAccess(u);
         const images=[];
-        if(path.endsWith('/save')&&b.images){if(typeof b.images!=='object'||Array.isArray(b.images)||Object.keys(b.images).some(k=>!['samsung','item'].includes(k)))fail(400,'Ảnh CKD không hợp lệ.');for(const slot of ['samsung','item'])if(b.images[slot])images.push({slot,...imageData(b.images[slot])});}
+        if(path.endsWith('/save')&&b.images){if(typeof b.images!=='object'||Array.isArray(b.images)||Object.keys(b.images).some(k=>!['samsung','item'].includes(k)))fail(400,'Ảnh CKD không hợp lệ.');for(const slot of ['samsung','item'])if(b.images[slot]){const value=b.images[slot],source=typeof value==='string'?value:value?.source;const parsed={slot,...imageData(source)};if(!parsed.buffer)fail(400,'Missing capture image');if(typeof value==='object'&&value.thumbnail){const thumb=imageData(value.thumbnail);if(thumb.mime!=='image/jpeg'||thumb.buffer.length>65536)fail(400,'Invalid image thumbnail');parsed.thumbnail=thumb.buffer;}images.push(parsed);}}
         try {const result=path.endsWith('/save')?saveCkd(db,b,u.id,images):checkCkd(db,b);return send(res,path.endsWith('/save')&&!result.duplicate?201:200,result);}catch(e){fail(400,e.message);}
       }
       const ckdImage=/^\/api\/ckd\/checks\/(\d+)\/image\/(samsung|item)$/.exec(path);
       if(req.method==='GET'&&ckdImage){const image=db.prepare('SELECT mime,image FROM ckd_check_images WHERE check_id=? AND slot=?').get(Number(ckdImage[1]),ckdImage[2]);if(!image)fail(404,'Chưa có ảnh đối chiếu.');res.writeHead(200,{'Content-Type':image.mime,'Cache-Control':'no-store'});res.end(image.image);return;}
-      if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export'].includes(path)) {
-        const workbook=Number(url.searchParams.get('workbook_id'));if(!Number.isSafeInteger(workbook)||workbook<1)fail(400,'Chọn file SO.');
-        const rows=db.prepare(`SELECT c.id,c.box_ref,c.samsung,c.item_code,c.status,c.qty,c.counted,c.snapshot,c.created_at,EXISTS(SELECT 1 FROM ckd_check_images i WHERE i.check_id=c.id AND i.slot='samsung') samsung_image,EXISTS(SELECT 1 FROM ckd_check_images i WHERE i.check_id=c.id AND i.slot='item') item_image,u.name scanner FROM ckd_checks c JOIN users u ON u.id=c.user_id WHERE workbook_id=? ORDER BY c.id DESC LIMIT 5000`).all(workbook).map(r=>({...r,check:JSON.parse(r.snapshot),snapshot:undefined}));
-        if(path.endsWith('/history'))return send(res,200,{checks:rows.slice(0,200),totals:db.prepare('SELECT c.samsung,COUNT(*) boxes,SUM(c.qty) total,(SELECT SUM(selling_qty) FROM ckd_orders o WHERE o.workbook_id=c.workbook_id AND o.samsung=c.samsung) target FROM ckd_checks c WHERE c.workbook_id=? AND c.counted=1 GROUP BY c.samsung').all(workbook)});
-        const bytes=excel([['Box','Phi\u00ean qu\u00e9t','Samsung','ITEM','Kết quả','MOQ box','Cộng số lượng','Item','Description','Model Vendor','SO Maker','Selling Qty','Tổng sau box','Người quét','Thời gian UTC'],...rows.map(r=>[r.box_ref,r.check.session_name||'',r.samsung,r.item_code,r.status,r.qty,r.counted?'Có':'Không',r.check.model?.item||'',r.check.model?.description||'',r.check.model?.maker||'',r.check.order?.so_maker||'',r.check.target,r.counted?r.check.after:r.check.total,r.scanner,r.created_at])]);
-        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(bytes);return;
+      if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export','/api/ckd/report.zip'].includes(path)) {
+        const workbook=Number(url.searchParams.get('workbook_id')),all=url.searchParams.get('scope')==='all'&&path!=='/api/ckd/history';
+        if(!all&&(!Number.isSafeInteger(workbook)||workbook<1))fail(400,'Chon SO.');
+        if(path.endsWith('/history')){const report=ckdOverview(db,workbook),before=Number(url.searchParams.get('before'))||0,rows=report.checks.filter(c=>!before||c.id<before),checks=rows.slice(0,200);return send(res,200,{checks,next:rows.length>200?checks.at(-1).id:null,count:report.checks.length,summary:report.summary,unsold:report.unsold,totals:report.summary.filter(g=>g.boxes>0)});}
+        let report;try{report=ckdReport(db,all?0:workbook,{exportedBy:u.name,imageLinks:path.endsWith('.zip')});}catch(e){fail(400,e.message);}
+        if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
@@ -297,7 +299,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         else if (kind === 'boxes') rows = [['Phiếu/lô','Box','ITEM','Số lượng','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'], ...db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all().map(r => [r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])];
         else if (kind === 'holding') rows = [['ITEM','Location','Số lượng thay đổi','Ghi chú','Người thao tác','Thời gian UTC'], ...db.prepare('SELECT m.*,u.name FROM movements m JOIN users u ON u.id=m.user_id ORDER BY m.id DESC').all().map(r => [r.item_code,r.location,r.qty,r.note,r.name,r.created_at])];
         else fail(400, 'Loại báo cáo không hợp lệ.');
-        const buffer = excel(rows);
+        const label=kind==='scans'?'Lịch sử quét mã':kind==='holding'?'Giao dịch Holding':'Xác nhận box';
+        const mode=kind==='scans'?(url.searchParams.get('mode')||'Tất cả loại quét'):'';
+        const buffer=reportWorkbook([{name:'Chi tiết',title:label,rows}],{title:'BÁO CÁO '+(kind==='scans'?'QUÉT MÃ':kind==='holding'?'HOLDING':'XÁC NHẬN BOX'),scope:mode,exportedBy:u.name});
         res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="work-area-${kind}.xlsx"` }); return res.end(buffer);
       }
       function checkBox(b) {
