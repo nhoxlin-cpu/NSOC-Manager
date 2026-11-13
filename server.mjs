@@ -5,6 +5,7 @@ import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
 import { parseCSV, excel } from './lib/formats.mjs';
+import { scanQuantity } from './lib/scan-quantity.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -68,14 +69,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'compact-scan-20261113-4' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'scan-evidence-20261113-5' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -182,7 +183,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         });
         return send(res, 200, { count: checked.length });
       }
-      const scanSelect = `SELECT s.id,s.barcode,s.mode,s.created_at,u.name AS scanner,m.item_code,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN materials m ON m.samsung=s.barcode OR m.item_code=s.barcode`;
+      const scanSelect = `SELECT s.id,s.barcode,s.mode,s.quantity,s.created_at,u.name AS scanner,m.item_code,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN materials m ON m.item_code=COALESCE((SELECT item_code FROM materials WHERE samsung=s.barcode),s.barcode)`;
       const scanCount=(barcode,mode)=>db.prepare('SELECT COUNT(*) n FROM scans WHERE barcode=? AND mode=?').get(barcode,mode).n;
       if (req.method === 'GET' && path === '/api/scans/check') {
         const barcode=norm(text(url.searchParams.get('barcode'),'Barcode',500)),mode=url.searchParams.get('mode');
@@ -192,7 +193,8 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (req.method === 'GET' && path === '/api/scans') {
         const before = Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER;
         const rows = db.prepare(`${scanSelect} WHERE s.id < ? ORDER BY s.id DESC LIMIT 100`).all(before);
-        return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, total: db.prepare('SELECT COUNT(*) n FROM scans').get().n });
+        const totals=db.prepare('SELECT COUNT(*) total,SUM(quantity) total_quantity,COUNT(quantity) quantity_count FROM scans').get();
+        return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, ...totals });
       }
       if (req.method === 'POST' && path === '/api/scans') {
         writeAccess(u); const b = await jsonBody(req), id = requestId(b.request_id);
@@ -204,7 +206,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const result=transaction(db,()=>{
           const before=scanCount(barcode,b.mode);
           if (b.reject_duplicate === true && before>0) return {blocked:true,count:before};
-          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image) VALUES (?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer);
+          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity) VALUES (?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,scanQuantity(barcode,b.mode));
           return {id:Number(saved.lastInsertRowid),barcode_count:before+1};
         });
         if (result.blocked) return send(res,409,{error:`Mã đã có ${result.count} lượt trên server. Chưa lưu thêm.`,code:'DUPLICATE_SCAN',count:result.count});
@@ -221,7 +223,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'GET' && path === '/api/export') {
         const kind = url.searchParams.get('kind') || 'scans'; let rows;
-        if (kind === 'scans') rows = [['ID','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM'], ...db.prepare(`${scanSelect} ORDER BY s.id DESC`).all().map(r => [r.id,r.barcode,r.mode,r.scanner,r.created_at,r.item_code || 'Chưa có trong MM'])];
+        if (kind === 'scans') rows = [['STT / ID','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM','Số lượng (QTY)'], ...db.prepare(`${scanSelect} ORDER BY s.id DESC`).all().map(r => [r.id,r.barcode,r.mode,r.scanner,r.created_at,r.item_code || 'Chưa có trong MM',r.quantity ?? ''])];
         else if (kind === 'boxes') rows = [['Phiếu/lô','Box','ITEM','Số lượng','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'], ...db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all().map(r => [r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])];
         else if (kind === 'holding') rows = [['ITEM','Location','Số lượng thay đổi','Ghi chú','Người thao tác','Thời gian UTC'], ...db.prepare('SELECT m.*,u.name FROM movements m JOIN users u ON u.id=m.user_id ORDER BY m.id DESC').all().map(r => [r.item_code,r.location,r.qty,r.note,r.name,r.created_at])];
         else fail(400, 'Loại báo cáo không hợp lệ.');

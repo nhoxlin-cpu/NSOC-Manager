@@ -15,7 +15,12 @@
 - Chế độ Nhãn bóng / chói tắt flash, giảm bù phơi sáng nếu thiết bị hỗ trợ và thử tăng tương phản ảnh đọc. Vùng phản chiếu trắng hoàn toàn vẫn cần đổi góc hoặc ánh sáng.
 - Kiểm tra trùng toàn bộ lịch sử dùng chung theo loại quét, kể cả khi hai thiết bị quét cùng lúc.
 - Giữ lượt quét bằng IndexedDB khi mất mạng và đồng bộ thủ công, chống ghi lặp khi gửi lại yêu cầu.
-- Lưu ảnh label đính kèm, xem lịch sử và xuất báo cáo `.xlsx`.
+- Hai nút vuông cạnh Quét camera: mũi tên vòng bật/tắt quét liên tục; camera bật/tắt tự chụp ảnh đối chiếu. Lựa chọn ảnh nhớ theo tài khoản trên thiết bị.
+- Khi bật tự chụp, lưu ảnh JPEG toàn khung hình gốc lúc đọc mã, trước tăng tương phản; ảnh đi cùng lượt quét và hàng chờ mất mạng. Có thể xem lại trong lịch sử. Cạnh dài ảnh giới hạn 1280 px để giảm dung lượng.
+- Bỏ biểu mẫu nhập barcode trên trang quét. Nếu cần nhập tay, chọn Nhập mã bằng tay trong màn hình camera.
+- Lịch sử hiển thị STT / ID, ảnh đối chiếu, QR hoặc Code 128 từ nguyên nội dung mã đã lưu; QR hỗ trợ Unicode, Code 128 dùng ASCII. Bộ tạo mã chạy tại thiết bị, không gửi nội dung sang dịch vụ bên ngoài.
+- Chỉ **Stock** có QTY: nhận một trường số nguyên dương rõ ràng `QTY:250`, `QTY=250` hoặc `QUANTITY:250`, phân cách bằng khoảng trắng, `;`, `|` hoặc dấu phẩy. Không suy số lượng từ mã ITEM hay MOQ. HS / Label và mã Stock chưa nhận được QTY để trống. Tổng dùng toàn bộ lịch sử; gửi lại yêu cầu không cộng lặp, xóa lượt quét cập nhật tổng. Dữ liệu cũ được bổ sung QTY theo cùng quy tắc khi nâng cấp.
+- Xuất lịch sử quét `.xlsx` có STT / ID và cột số lượng.
 - Nhập danh mục MM từ CSV UTF-8, tra ITEM / Samsung / Maker / Location.
 - CKD: đối chiếu hai nhãn và Maker với MM, xác nhận box theo phiếu/lô, chặn box trùng và số lượng vượt mục tiêu.
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
@@ -39,7 +44,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-20 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
+24 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 

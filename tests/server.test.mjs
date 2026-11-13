@@ -171,6 +171,31 @@ test('export is a real XLSX package and user input is stored as text, not a form
   assert.match(hostile,/t="inlineStr"/); assert.doesNotMatch(hostile,/<f>/); assert.match(hostile,/&lt;script&gt;&amp;/); assert.ok(!hostile.includes('\u0000</t>'));
 });
 
+test('Stock quantities are shared totals across pages, retries and deletion; HS and Label do not contribute',async()=>{
+  const before=(await request('/api/scans',admin)).data;
+  const image='data:image/jpeg;base64,'+Buffer.from([255,216,255,224,0,0]).toString('base64');
+  const body={request_id:randomUUID(),barcode:'ITEM=A;QTY=40',mode:'Stock',image};
+  const created=await request('/api/scans',inspector,'POST',body);assert.equal(created.status,201);
+  assert.equal((await request('/api/scans',inspector,'POST',body)).status,200);
+  for(const mode of ['HS','Label'])assert.equal((await request('/api/scans',inspector,'POST',{...body,request_id:randomUUID(),mode})).status,201);
+  const result=(await request('/api/scans',admin)).data;
+  assert.equal(result.total,before.total+3);assert.equal(result.total_quantity,(before.total_quantity??0)+40);assert.equal(result.quantity_count,before.quantity_count+1);
+  const row=result.scans.find(r=>r.id===created.data.id);assert.equal(row.quantity,40);assert.equal(row.has_image,1);
+  const older=(await request('/api/scans?before='+created.data.id,viewer)).data;assert.equal(older.total_quantity,result.total_quantity);
+  const evidence=await request('/api/scans/'+created.data.id+'/image',viewer);assert.equal(evidence.status,200);assert.equal(evidence.headers.get('content-type'),'image/jpeg');
+  assert.equal((await request('/api/scans/'+created.data.id,admin,'DELETE')).status,200);
+  const after=(await request('/api/scans',admin)).data;assert.equal(after.total_quantity,before.total_quantity);assert.equal(after.quantity_count,before.quantity_count);
+});
+
+test('history returns one row when a barcode matches one Samsung code and another ITEM code',async()=>{
+  const insert=db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)');
+  insert.run('CROSS-ITEM-A','CROSS-CODE','Part A','','Maker','','',100,10);
+  insert.run('CROSS-CODE','CROSS-SAMSUNG-B','Part B','','Maker','','',100,10);
+  const saved=await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'CROSS-CODE',mode:'HS'});assert.equal(saved.status,201);
+  const rows=(await request('/api/scans',viewer)).data.scans.filter(r=>r.id===saved.data.id);
+  assert.equal(rows.length,1);assert.equal(rows[0].item_code,'CROSS-ITEM-A');
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);

@@ -1,4 +1,4 @@
-import { PhoneScanner } from '/scanner.js?v=20261113-4';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261113-5';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -28,7 +28,7 @@ const roleName = role => ({ admin: 'Quản trị viên', inspector: 'Nhân viên
 const number = n => Number(n).toLocaleString('en-US');
 const time = value => new Date(value.replace(' ', 'T') + 'Z').toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
 const defaultNavigation=['home','scan','assistant','account'];
-const state = { user: null, csrf: null, needsSetup: false, page: '', mode: 'Label', image: null, imageName: '', connected: false, scans: [], next: null,navigation:[...defaultNavigation],continuousScan:true };
+const state = { user: null, csrf: null, needsSetup: false, page: '', mode: 'Label', image: null, imageName: '', connected: false, scans: [], next: null,navigation:[...defaultNavigation],continuousScan:true,autoCapture:true };
 let toastTimer, phoneScanner, renderId = 0;
 function toast(message) { const el = $('#toast'); el.textContent = message; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 5500); }
 function connection(ok) {
@@ -51,23 +51,32 @@ async function session() {
   await loadPreferences(); renderNavigation();
 }
 async function loadPreferences() {
+  try {state.autoCapture=localStorage.getItem('wa-auto-capture-u'+state.user?.id)!=='false';}catch{state.autoCapture=true;}
   state.navigation=[...defaultNavigation];state.continuousScan=true;
   if (state.user) try {const result=await api('/preferences');state.navigation=result.navigation;state.continuousScan=result.continuous_scan!==false;} catch(e) {if(!e.network && e.status!==401) toast(e.message);}
 }
 function updateContinuousUI() {
-  document.querySelectorAll('[data-continuous-toggle]').forEach(button=>{button.setAttribute('aria-pressed',String(state.continuousScan));button.classList.toggle('enabled',state.continuousScan);button.textContent='Quét liên tục: '+(state.continuousScan?'Bật':'Tắt');});
+  document.querySelectorAll('[data-continuous-toggle]').forEach(button=>{button.setAttribute('aria-pressed',String(state.continuousScan));button.classList.toggle('enabled',state.continuousScan);const label='Quét liên tục: '+(state.continuousScan?'Bật':'Tắt');button.setAttribute('aria-label',label);button.title=label;if(button.closest('.capture-actions'))button.innerHTML=icon('sync');else button.textContent=label;});
   if(phoneScanner&&phoneScanner.continuous!==state.continuousScan)phoneScanner.setContinuous(state.continuousScan,false);
-  const form=$('#scan-form');if(state.continuousScan&&form?.dataset.singleProcessed==='true'){delete form.dataset.singleProcessed;form.reset();$('#manual-next').hidden=true;$('button[type="submit"]',form).disabled=!canWrite();}
 }
 async function setContinuousScan(on) {
   state.continuousScan=on;updateContinuousUI();
   try{await api('/preferences',{method:'POST',data:{continuous_scan:on}});}catch(e){toast(e.network?'Đã áp dụng chế độ quét trên màn hình này; chưa lưu lên tài khoản vì mất kết nối.':e.message);}
 }
 function scanFlowBar(target, compact = false) {
-  const row=document.createElement('div');row.className='scan-flow-bar'+(compact?' compact':'');row.innerHTML=(compact?'':'<span>Camera & máy quét</span>')+'<button type="button" data-continuous-toggle></button>';
-  if(compact)target.insertAdjacentElement('beforebegin',row);else target.prepend(row);
-  row.querySelector('button').onclick=()=>setContinuousScan(!state.continuousScan);updateContinuousUI();
+  if(compact){
+    const toggle=document.createElement('button');toggle.type='button';toggle.className='button scan-square';toggle.dataset.continuousToggle='';
+    target.insertBefore(toggle,$('#choose-photo'));toggle.onclick=()=>setContinuousScan(!state.continuousScan);updateContinuousUI();return;
+  }
+  const row=document.createElement('div');row.className='scan-flow-bar';row.innerHTML='<span>Camera & máy quét</span><button type="button" data-continuous-toggle></button>';
+  target.prepend(row);row.querySelector('button').onclick=()=>setContinuousScan(!state.continuousScan);updateContinuousUI();
 }
+function updateCaptureUI(){
+  const button=$('#choose-photo');if(!button)return;
+  const label='Tự chụp ảnh khi đọc mã: '+(state.autoCapture?'Bật':'Tắt');
+  button.setAttribute('aria-label',label);button.title=label;button.setAttribute('aria-pressed',String(state.autoCapture));button.classList.toggle('enabled',state.autoCapture);
+}
+
 function button(text, id, style = '', symbol = '') { return `<button class="button ${style}" ${id ? `id="${id}"` : ''}>${symbol ? icon(symbol) : ''}${text}</button>`; }
 function field(label, name, options = {}) {
   const { type = 'text', placeholder = '', value = '', required = true, extra = '', autocomplete = 'off' } = options;
@@ -168,24 +177,13 @@ async function showPending() {
 }
 async function scan() {
   if (!state.user) { $('#main').innerHTML = needsLogin('Quét mã'); return; }
-  $('#main').innerHTML = `${pageTop('Quét & thu thập dữ liệu', 'Barcode · Ảnh label · Excel')}<div class="columns wide-left"><div><section class="panel">${readOnlyNote()}<div class="tabs" role="tablist" aria-label="Loại quét">${['HS','Stock','Label'].map(mode => `<button class="tab ${mode === state.mode ? 'active' : ''}" role="tab" aria-selected="${mode === state.mode}" data-mode="${mode}">${mode}</button>`).join('')}</div><div class="capture-actions">${button('Quét camera','scan-camera','primary','scan')}<button class="button image-upload" id="choose-photo" aria-label="Chụp hoặc chọn ảnh label">${icon('camera')}</button><input id="photo-input" class="file-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"></div><div id="photo-area"></div><hr class="divider"><form id="scan-form">${field('BARCODE','barcode',{placeholder:'Nhập barcode hoặc dùng máy scan',extra:'maxlength="500" autocapitalize="none" spellcheck="false"'})}<p class="form-message" role="alert"></p><button class="button full" type="submit" ${canWrite() ? '' : 'disabled'}>${icon('plus')} Thêm barcode</button></form><p class="scan-caption">${icon('shield')} Lưu dùng chung trên server. Khi mất mạng, lượt quét được giữ trên thiết bị và chờ bạn đồng bộ.</p><details><summary>Thông tin máy scan</summary><p>Máy quét USB hoặc Bluetooth: đặt con trỏ vào ô Barcode rồi quét. Nếu máy gửi phím Enter, lượt quét sẽ được lưu ngay.</p><p>Camera cần HTTPS và quyền truy cập camera. Chọn Barcode hoặc QR để quét liên tục; mã trùng sẽ được cảnh báo trước khi lưu thêm. Ảnh label đính kèm riêng, chưa có OCR.</p></details></section><section class="panel"><div class="table-tools"><h2>Đồng bộ thiết bị</h2>${button('Đồng bộ','sync-queue','','sync')}</div><p class="muted">Dùng chung toàn server · <strong id="pending-count">0</strong> lượt quét chờ đồng bộ</p><div id="pending-list"></div></section></div><section class="panel"><div class="table-tools"><h2>Lịch sử quét</h2><div class="actions">${button('Tải lại','reload-scans','small','sync')}<a class="button primary small" href="/api/export?kind=scans">${icon('download')} Xuất Excel</a></div></div><p class="muted" id="scan-total">Đang tải lượt quét…</p><div id="scan-list"></div><div class="actions mt">${button('Xem thêm','more-scans','small')}</div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p></section></div>`;
+  $('#main').innerHTML = `${pageTop('Quét & thu thập dữ liệu', 'Barcode · Ảnh label · Excel')}<div class="columns wide-left"><div><section class="panel">${readOnlyNote()}<div class="tabs" role="tablist" aria-label="Loại quét">${['HS','Stock','Label'].map(mode => `<button class="tab ${mode === state.mode ? 'active' : ''}" role="tab" aria-selected="${mode === state.mode}" data-mode="${mode}">${mode}</button>`).join('')}</div><div class="capture-actions">${button('Quét camera','scan-camera','primary','scan')}<button class="button scan-square" id="choose-photo" aria-label="Tự chụp ảnh khi đọc mã">${icon('camera')}</button></div><p class="scan-caption">${icon('shield')} Lưu dùng chung trên server. Khi mất mạng, lượt quét được giữ trên thiết bị và chờ bạn đồng bộ.</p><details><summary>Thông tin máy scan</summary><p>Dùng Quét camera để đọc mã. Bật biểu tượng camera để tự chụp ảnh đối chiếu mỗi lượt quét được lưu.</p><p>Camera cần HTTPS và quyền truy cập camera. Chọn Barcode hoặc QR để quét liên tục; mã trùng sẽ được cảnh báo trước khi lưu thêm. Ảnh đối chiếu lưu theo từng lượt quét, kể cả khi chờ đồng bộ. Chưa có OCR.</p></details></section><section class="panel"><div class="table-tools"><h2>Đồng bộ thiết bị</h2>${button('Đồng bộ','sync-queue','','sync')}</div><p class="muted">Dùng chung toàn server · <strong id="pending-count">0</strong> lượt quét chờ đồng bộ</p><div id="pending-list"></div></section></div><section class="panel"><div class="table-tools"><h2>Lịch sử quét</h2><div class="actions">${button('Tải lại','reload-scans','small','sync')}<a class="button primary small" href="/api/export?kind=scans">${icon('download')} Xuất Excel</a></div></div><p class="muted" id="scan-total">Đang tải lượt quét…</p><div id="scan-list"></div><div class="actions mt">${button('Xem thêm','more-scans','small')}</div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p></section></div>`;
   document.querySelectorAll('[data-mode]').forEach(el => el.onclick = () => { state.mode = el.dataset.mode; document.querySelectorAll('[data-mode]').forEach(b => { b.classList.toggle('active', b === el); b.setAttribute('aria-selected', String(b === el)); }); });
   $('.capture-actions').insertAdjacentHTML('beforebegin',field('Tên phiên quét (tùy chọn)','scan-session-title',{placeholder:'VD: Sub heatsink',required:false,extra:'maxlength="80"'}));
   scanFlowBar($('.capture-actions'),true);
-  $('#scan-form').insertAdjacentHTML('beforeend','<button class="button soft full mt" type="button" id="manual-next" hidden>Quét mã tiếp theo</button>');
-  $('#manual-next').onclick=()=>{const form=$('#scan-form');delete form.dataset.singleProcessed;form.reset();$('#manual-next').hidden=true;$('button[type="submit"]',form).disabled=!canWrite();$('#barcode').focus();};
   $('#scan-camera').onclick = startCamera;
-  $('#choose-photo').onclick = () => $('#photo-input').click();
-  $('#photo-input').onchange = async e => { try { const file = e.target.files[0]; if (!file) return; if (!['image/jpeg','image/png','image/webp'].includes(file.type)) throw Error('Chọn ảnh JPEG, PNG hoặc WebP.'); if (file.size > 3 * 1024 * 1024) throw Error('Ảnh tối đa 3 MB. Hãy chọn ảnh nhỏ hơn.'); state.image = await readDataURL(file); state.imageName = file.name; photoPreview(); } catch(e) { toast(e.message); } };
-  photoPreview();
-  formAction('#scan-form', async (b, form) => {
-    if(form.dataset.singleProcessed==='true'){toast('Nhấn Quét mã tiếp theo để đọc thêm mã.');return;}
-    const payload = { request_id: crypto.randomUUID(), barcode: b.barcode, mode:state.mode, image:state.image };
-    try { await api('/scans', { method:'POST', data:payload }); toast('Đã lưu lượt quét trên server.'); }
-    catch(e) { if (!e.network) throw e; await queue('put', { ...payload, owner:state.user.id, username:state.user.username }); toast('Mất kết nối. Đã giữ lượt quét trên thiết bị, chờ đồng bộ.'); }
-    if(state.continuousScan){form.reset();$('#barcode')?.focus();}else{form.dataset.singleProcessed='true';$('#manual-next').hidden=false;}
-    state.image = null; state.imageName = ''; photoPreview(); await Promise.allSettled([loadScans(), showPending()]);
-  });
+  $('#choose-photo').onclick=()=>{state.autoCapture=!state.autoCapture;try{localStorage.setItem('wa-auto-capture-u'+state.user.id,String(state.autoCapture));}catch{}updateCaptureUI();};
+  updateCaptureUI();
   $('#reload-scans').onclick = () => loadScans(); $('#more-scans').onclick = () => loadScans(true);
   $('#sync-queue').onclick = async e => {
     const btn = e.currentTarget; btn.disabled = true; let count = 0, repeated=0;
@@ -195,23 +193,17 @@ async function scan() {
   };
   await Promise.allSettled([loadScans(), showPending()]);
 }
-async function readDataURL(file) { return new Promise((resolve,reject) => { const r = new FileReader(); r.onload = () => resolve(r.result); r.onerror = () => reject(Error('Không đọc được ảnh.')); r.readAsDataURL(file); }); }
-function photoPreview() {
-  const el = $('#photo-area'); if (!el) return;
-  el.innerHTML = state.image ? `<div class="photo-preview"><img src="${escape(state.image)}" alt="Ảnh label đã chọn"><span>${escape(state.imageName)}<br>Đính kèm khi lưu barcode</span><button class="button small" id="remove-photo">Bỏ ảnh</button></div>` : '';
-  if ($('#remove-photo')) $('#remove-photo').onclick = () => { state.image = null; state.imageName = ''; photoPreview(); };
-}
 async function loadScans(more = false) {
   const el = $('#scan-list'); if (!el) return;
   try {
     const result = await api('/scans' + (more && state.next ? `?before=${state.next}` : ''));
     if (!el.isConnected) return;
     state.scans = more ? [...state.scans, ...result.scans] : result.scans; state.next = result.next;
-    $('#scan-total').textContent = `Đã lưu ${number(result.total)} lượt quét · Đang hiển thị ${state.scans.length} · Dùng chung toàn server`;
+    $('#scan-total').textContent = `Đã lưu ${number(result.total)} lượt quét · Đang hiển thị ${state.scans.length} · ${result.total_quantity == null ? 'Chưa có số lượng' : 'Tổng QTY Stock: '+number(result.total_quantity)+' ('+number(result.quantity_count)+' lượt có QTY)'} · Dùng chung toàn server`;
     $('#more-scans').hidden = !state.next;
-    el.innerHTML = state.scans.length ? `<div class="table-wrap"><table><thead><tr><th>Người quét</th><th>Ảnh label</th><th>Barcode / ITEM</th><th>QR / Chữ</th>${state.user.role === 'admin' ? '<th>Thao tác</th>' : ''}</tr></thead><tbody>${state.scans.map(r => `<tr><td>${escape(r.scanner)}<small>${time(r.created_at)} · ${escape(r.mode)}</small></td><td>${r.has_image ? `<button class="icon-button" data-photo="${r.id}" aria-label="Xem ảnh label ${r.id}"><img class="table-thumb" src="/api/scans/${r.id}/image" alt="Ảnh label" loading="lazy"></button>` : `<span class="thumb-placeholder">${icon('photo')}</span>`}</td><td class="wrap">${escape(r.barcode)}<small>${r.item_code ? escape(r.item_code) : 'Chưa có ITEM trong MM'}</small></td><td><button class="button small" data-text="${r.id}">QR / Chữ</button></td>${state.user.role === 'admin' ? `<td><button class="button danger small" data-delete="${r.id}">Xóa</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : empty('Chưa có lượt quét', 'Lượt quét đầu tiên sẽ xuất hiện tại đây.', 'scan');
+    el.innerHTML = state.scans.length ? `<div class="table-wrap"><table><thead><tr><th>STT / ID</th><th>Người quét</th><th>Ảnh đối chiếu</th><th>Barcode / ITEM</th><th>Số lượng</th><th>QR / Mã vạch</th>${state.user.role === 'admin' ? '<th>Thao tác</th>' : ''}</tr></thead><tbody>${state.scans.map(r => `<tr><td>${number(r.id)}</td><td>${escape(r.scanner)}<small>${time(r.created_at)} · ${escape(r.mode)}</small></td><td>${r.has_image ? `<button class="icon-button" data-photo="${r.id}" aria-label="Xem ảnh label ${r.id}"><img class="table-thumb" src="/api/scans/${r.id}/image" alt="Ảnh label" loading="lazy"></button>` : `<span class="thumb-placeholder">${icon('photo')}</span>`}</td><td class="wrap">${escape(r.barcode)}<small>${r.item_code ? escape(r.item_code) : 'Chưa có ITEM trong MM'}</small></td><td>${r.quantity == null ? '—' : number(r.quantity)}</td><td><button class="button small" data-text="${r.id}">QR / Mã vạch</button></td>${state.user.role === 'admin' ? `<td><button class="button danger small" data-delete="${r.id}">Xóa</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : empty('Chưa có lượt quét', 'Lượt quét đầu tiên sẽ xuất hiện tại đây.', 'scan');
     el.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => detail('Ảnh label', `<img class="photo-full" src="/api/scans/${b.dataset.photo}/image" alt="Ảnh label đã lưu">`));
-    el.querySelectorAll('[data-text]').forEach(b => b.onclick = () => { const row = state.scans.find(r => r.id === Number(b.dataset.text)); detail('Barcode / QR / Chữ', `<p class="muted">Nội dung barcode đã lưu. Ảnh đính kèm chưa được tự động đọc OCR.</p><pre class="readable">${escape(row.barcode)}</pre>`); });
+    el.querySelectorAll('[data-text]').forEach(b=>b.onclick=()=>showScanCode(state.scans.find(r=>r.id===Number(b.dataset.text))));
     el.querySelectorAll('[data-delete]').forEach(b => b.onclick = () => {
       detail('Xóa lượt quét?', `<p class="muted">Lượt quét #${b.dataset.delete} và ảnh đi kèm sẽ được xóa khỏi dữ liệu dùng chung.</p><div class="actions equal">${button('Giữ lại','cancel-delete')}${button('Xóa lượt quét','confirm-delete','danger')}</div>`);
       $('#cancel-delete').onclick = () => $('#detail-dialog').close();
@@ -220,14 +212,53 @@ async function loadScans(more = false) {
   } catch(e) { if (el.isConnected) { el.innerHTML = empty('Chưa tải được lịch sử', escape(e.message), 'sync'); $('#scan-total').textContent = 'Chưa thể cập nhật dữ liệu server.'; $('#more-scans').hidden = true; } }
 }
 
+let barcodeWriterPromise;
+function barcodeWriter(){
+  if(window.JsBarcode)return Promise.resolve(window.JsBarcode);
+  if(!barcodeWriterPromise)barcodeWriterPromise=new Promise((resolve,reject)=>{
+    const script=document.createElement('script');script.src='/vendor/JsBarcode.code128-3.12.3.min.js';
+    script.onload=()=>resolve(window.JsBarcode);script.onerror=()=>{script.remove();barcodeWriterPromise=null;reject(Error('Không tải được bộ tạo mã vạch. Hãy thử lại.'));};document.head.append(script);
+  });
+  return barcodeWriterPromise;
+}
+async function showScanCode(row){
+  detail('Mã đã quét · #'+row.id,`<div class="actions code-formats"><button class="button small primary" data-code-format="qr" aria-pressed="true">QR</button><button class="button small" data-code-format="barcode" aria-pressed="false">Mã vạch</button></div><p class="muted" id="code-status" role="status"></p><div class="generated-code" id="generated-code"></div><pre class="readable">${escape(row.barcode)}</pre>`);
+  const host=$('#generated-code'),status=$('#code-status');let generation=0;
+  async function draw(format){
+    const version=++generation;host.dataset.format=format;host.replaceChildren();status.textContent='Đang tạo mã…';
+    document.querySelectorAll('[data-code-format]').forEach(b=>{b.setAttribute('aria-pressed',String(b.dataset.codeFormat===format));b.classList.toggle('primary',b.dataset.codeFormat===format);});
+    try{
+      const canvas=document.createElement('canvas');canvas.setAttribute('role','img');canvas.setAttribute('aria-label',(format==='qr'?'QR: ':'Mã vạch: ')+row.barcode);
+      if(format==='qr'){
+        const Z=await zxing(),matrix=new Z.QRCodeWriter().encode(row.barcode,Z.BarcodeFormat.QR_CODE,320,320,new Map([[Z.EncodeHintType.CHARACTER_SET,'UTF-8']]));
+        canvas.width=matrix.getWidth();canvas.height=matrix.getHeight();const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);ctx.fillStyle='#000';
+        for(let y=0;y<canvas.height;y++)for(let x=0;x<canvas.width;x++)if(matrix.get(x,y))ctx.fillRect(x,y,1,1);
+      }else{
+        if(!/^[\x20-\x7e]+$/.test(row.barcode))throw Error('Code 128 hỗ trợ ký tự ASCII. Chọn QR để giữ đầy đủ nội dung mã này.');
+        const writer=await barcodeWriter();writer(canvas,row.barcode,{format:'CODE128',width:2,height:110,margin:24,displayValue:false});
+      }
+      if(!host.isConnected||generation!==version)return;
+      host.append(canvas);status.textContent=format==='qr'?'QR chứa nguyên nội dung đã quét.':'Code 128 chứa nguyên nội dung đã quét. Vuốt ngang nếu mã dài.';
+    }catch(e){if(host.isConnected&&generation===version)status.textContent=e.message;}
+  }
+  document.querySelectorAll('[data-code-format]').forEach(b=>b.onclick=()=>draw(b.dataset.codeFormat));draw('qr');
+}
+function manualScan(){
+  detail('Nhập mã',`<form id="manual-scan-form">${field('Mã cần lưu','manual-barcode',{extra:'maxlength="500"'})}<p class="form-message" role="alert"></p><button type="submit" class="button primary full">Lưu mã</button></form>`);
+  formAction('#manual-scan-form',async b=>{
+    const payload={request_id:crypto.randomUUID(),barcode:b['manual-barcode'],mode:state.mode,image:null,reject_duplicate:true};
+    try{await api('/scans',{method:'POST',data:payload});toast('Đã lưu mã.');}catch(e){if(!e.network)throw e;await queue('put',{...payload,reject_duplicate:false,owner:state.user.id,username:state.user.username});toast('Đã giữ mã để đồng bộ.');}
+    $('#detail-dialog').close();await Promise.allSettled([loadScans(),showPending()]);
+  });$('#manual-barcode').focus();
+}
 function startCamera() {
   if (!canWrite()) { toast('Cần quyền ghi dữ liệu để sử dụng quét camera.'); return; }
   stopCamera(); const owner=state.user.id, username=state.user.username;
   phoneScanner=new PhoneScanner($('#camera-dialog'),{
-    mode:state.mode,title:$('#scan-session-title')?.value.trim() || `Scan ${state.mode}`,accountKey:'u'+owner,continuous:state.continuousScan,onContinuousChange:setContinuousScan,api,pending:pendingRows,
+    mode:state.mode,title:$('#scan-session-title')?.value.trim() || `Scan ${state.mode}`,accountKey:'u'+owner,continuous:state.continuousScan,autoCapture:state.autoCapture,onContinuousChange:setContinuousScan,api,pending:pendingRows,
     enqueue:row=>queue('put',{...row,owner,username}),
     onChanged:()=>{if (state.page === 'scan') Promise.allSettled([loadScans(),showPending()]);},
-    onManual:()=>$('#barcode')?.focus(),onAuthExpired:()=>{stopCamera();location.hash='#account';}
+    onManual:manualScan,onAuthExpired:()=>{stopCamera();location.hash='#account';}
   });
   phoneScanner.open();
 }
@@ -302,7 +333,7 @@ async function holding(id) {
 
 function assistant() {
   $('#main').innerHTML = `${pageTop('Trợ lý công việc', 'Hướng dẫn sử dụng Work Area')}<div class="help-grid">${[
-    ['scan','Quét mã & ảnh label','Vào Quét mã, chọn HS, Stock hoặc Label. Nhập mã bằng tay, máy scan USB/Bluetooth hoặc camera trên thiết bị hỗ trợ. Ảnh label là tệp đính kèm; bản này chưa tự nhận dạng chữ OCR.'],
+    ['scan','Quét mã & ảnh label','Vào Quét mã, chọn HS, Stock hoặc Label. Nhập mã bằng tay, máy scan USB/Bluetooth hoặc camera trên thiết bị hỗ trợ. Bật biểu tượng camera để tự chụp ảnh đối chiếu khi đọc mã. Biểu tượng mũi tên vòng bật/tắt quét liên tục. Lịch sử có QR / Mã vạch và tổng QTY nếu mã chứa số lượng rõ ràng; chưa có OCR.'],
     ['sync','Khi mất kết nối','Lượt quét có thể được giữ trong bộ nhớ trình duyệt sau khi bạn đã đăng nhập. Không xóa dữ liệu trình duyệt trước khi đồng bộ. Đăng nhập lại đúng tài khoản, vào Quét mã → Đồng bộ để gửi các lượt đang chờ lên server.'],
     ['ckd','Kiểm tra CKD','Nhập phiếu/lô, ITEM, hai nhãn, Maker, số lượng box và mã box riêng. Nhấn đối chiếu để xem kết quả. Chỉ khi bạn nhấn Xác nhận box, dữ liệu mới được lưu. Hệ thống chặn nhãn sai, box trùng và số lượng vượt.'],
     ['search','Nhập danh mục MM','Quản trị viên vào Tra cứu MM, tải CSV mẫu. Điền dữ liệu thật và lưu CSV UTF-8 từ Excel. Mỗi mã ITEM và Samsung phải duy nhất; Selling Q’ty và MOQ là số nguyên dương.'],
