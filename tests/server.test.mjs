@@ -248,6 +248,25 @@ test('MM recognizes Item NM and Mark headings and permits Vendor when Maker is a
   assert.equal(scan.status,201);assert.equal(scan.data.stock.item_name,'Alias name');assert.equal(scan.data.stock.vendor,'Vendor only');assert.equal(scan.data.stock.maker,'');assert.equal(scan.data.stock.quantity,20);assert.equal(scan.data.stock.lot_no,'ALIAS-LOT');
 });
 
+test('MM Location, Item code and Spec filters search only the selected field',async()=>{
+  const save=db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)');
+  save.run('SCOPED-MM-TOKEN','SCOPE-BAR-A','Item A','Description A','Maker','','Shelf A',1000,100);
+  save.run('SCOPE-LOCATION','SCOPE-BAR-B','Item B','Description B','Maker','','SCOPED-MM-TOKEN',1000,100);
+  save.run('SCOPE-SPEC','SCOPE-BAR-C','Item C','SCOPED-MM-TOKEN','Maker','','Shelf C',1000,100);
+  for(const [field,item] of [['location','SCOPE-LOCATION'],['item_code','SCOPED-MM-TOKEN'],['spec','SCOPE-SPEC']]){
+    const result=await request('/api/materials?field='+field+'&q=scoped-mm-token',viewer);assert.equal(result.status,200);assert.equal(result.data.field,field);assert.equal(result.data.matched,1);assert.deepEqual(result.data.materials.map(m=>m.item_code),[item]);
+    const all=await request('/api/materials?field='+field,viewer);assert.equal(all.data.matched,all.data.total);
+  }
+  assert.equal((await request('/api/materials?q=scoped-mm-token',viewer)).data.matched,3);
+  for(const field of ['wrong','constructor','__proto__','location) OR 1=1 --'])assert.equal((await request('/api/materials?field='+encodeURIComponent(field),viewer)).status,400);
+});
+
+test('MM CSV Spec header maps to description and remains available to Spec lookup',async()=>{
+  const csv=header.replace('description','Spec')+'\nSPEC-ALIAS,SPEC-BAR,Resistor,10K 1% 1608,Maker,Vendor,A1,1000,100';
+  assert.equal((await request('/api/materials/import',admin,'POST',{csv})).status,200);
+  const result=await request('/api/materials?field=spec&q='+encodeURIComponent('10k 1% 1608'),viewer);assert.equal(result.data.materials[0].item_code,'SPEC-ALIAS');assert.equal(result.data.materials[0].description,'10K 1% 1608');
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);
