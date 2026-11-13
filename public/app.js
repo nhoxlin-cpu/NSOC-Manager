@@ -1,4 +1,4 @@
-import { PhoneScanner } from '/scanner.js?v=20261113-1';
+import { PhoneScanner } from '/scanner.js?v=20261113-2';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -27,7 +27,8 @@ const icon = (name, extra = '') => `<svg viewBox="0 0 24 24" aria-hidden="true" 
 const roleName = role => ({ admin: 'Quản trị viên', inspector: 'Nhân viên kiểm tra', viewer: 'Chỉ xem' }[role] || role);
 const number = n => Number(n).toLocaleString('en-US');
 const time = value => new Date(value.replace(' ', 'T') + 'Z').toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
-const state = { user: null, csrf: null, needsSetup: false, page: '', mode: 'Label', image: null, imageName: '', connected: false, scans: [], next: null };
+const defaultNavigation=['home','scan','assistant','account'];
+const state = { user: null, csrf: null, needsSetup: false, page: '', mode: 'Label', image: null, imageName: '', connected: false, scans: [], next: null,navigation:[...defaultNavigation] };
 let toastTimer, phoneScanner, renderId = 0;
 function toast(message) { const el = $('#toast'); el.textContent = message; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 5500); }
 function connection(ok) {
@@ -47,6 +48,11 @@ async function api(path, { method = 'GET', data } = {}) {
 }
 async function session() {
   const s = await api('/me'); state.user = s.user; state.csrf = s.csrf; state.needsSetup = s.needsSetup;
+  await loadPreferences(); renderNavigation();
+}
+async function loadPreferences() {
+  state.navigation=[...defaultNavigation];
+  if (state.user) try {const result=await api('/preferences');state.navigation=result.navigation;} catch(e) {if(!e.network && e.status!==401) toast(e.message);}
 }
 function button(text, id, style = '', symbol = '') { return `<button class="button ${style}" ${id ? `id="${id}"` : ''}>${symbol ? icon(symbol) : ''}${text}</button>`; }
 function field(label, name, options = {}) {
@@ -71,6 +77,11 @@ function formAction(selector, handler) {
 }
 
 const routes = [['home', 'home', 'Trang chủ'], ['scan', 'scan', 'Quét mã'], ['ckd', 'ckd', 'Kiểm tra CKD'], ['cut', 'cut', 'Cắt chân linh kiện'], ['holding', 'box', 'Holding room'], ['mm', 'search', 'Tra cứu MM'], ['assistant', 'assistant', 'Trợ lý'], ['account', 'user', 'Tài khoản']];
+const shortLabels={home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt chân',holding:'Holding',mm:'Tra MM',assistant:'Trợ lý',account:'Tài khoản'};
+function renderNavigation() {
+  const keys=state.user ? state.navigation : defaultNavigation;
+  $('.bottom-nav').innerHTML=keys.filter(key=>routes.some(r=>r[0]===key)).map(key=>{const route=routes.find(r=>r[0]===key);return `<a href="#${key}" data-nav="${key}" aria-label="${route[2]}" ${state.page===key?'class="active" aria-current="page"':''}>${icon(route[1])}<span>${shortLabels[key]}</span></a>`;}).join('');
+}
 $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = () => el.closest('dialog').close());
@@ -80,26 +91,45 @@ function detail(title, html) { $('#detail-title').textContent = title; $('#detai
 
 async function home(id) {
   $('#main').innerHTML = `<div class="home-title"><div class="eyebrow">Quản lý & kiểm tra</div><h1>Không gian làm việc</h1><p class="lead">Quét mã, kiểm tra và quản lý vật tư.</p></div>
-    <div class="home-main"><a class="hero" href="#scan"><div class="hero-copy"><div><span class="kicker"><i class="live-dot"></i> SCAN LABEL</span><h2>Quét & thu thập dữ liệu</h2></div><p>Barcode · Ảnh label · Excel</p></div><span class="hero-icon">${icon('scan')}</span><span class="hero-arrow">${icon('arrow')}</span></a>
-    <div><div class="section-title"><h2>Chức năng làm việc</h2><span>Chọn để bắt đầu</span></div><div class="features">
-      ${[['ckd','ckd','','Kiểm tra CKD','Đối chiếu hai nhãn'],['cut','cut','purple','Cắt chân linh kiện','Tra mã AI ↔ MI'],['holding','box','green','Holding room','Nhập · Xuất · Tồn kho'],['mm','search','cyan','Tra cứu MM','Vật tư & Location']].map(([route,symbol,color,title,desc]) => `<a class="feature" href="#${route}">${icon('diagonal','class="feature-arrow"')}<div class="feature-icon ${color}">${icon(symbol)}</div><h3>${title}</h3><p>${desc}</p></a>`).join('')}
-    </div></div></div>
+    <section class="quality-hero" aria-label="HANSOL HEVH IQC — Chất lượng"><div class="quality-copy"><div class="quality-brands">HANSOL <span>HEVH</span></div><h2>Chất lượng<br>bắt đầu từ <em>IQC.</em></h2><p>Kiểm tra đầu vào.<br>Chính xác trong từng chi tiết.</p><span class="quality-caption"><i></i> INCOMING QUALITY CONTROL</span></div>
+      <div class="quality-art" aria-hidden="true"><div class="quality-grid"></div><div class="quality-ring ring-one"></div><div class="quality-ring ring-two"></div><div class="quality-orbit"><i></i></div><div class="quality-core">${icon('shield')}<strong>IQC</strong><span>CHẤT LƯỢNG</span></div><span class="quality-chip chip-one">${icon('box')} Vật tư</span><span class="quality-chip chip-two">${icon('check')} Kiểm tra</span><div class="quality-particles"><i></i><i></i><i></i></div></div>
+      <div class="quality-flow"><span>HANSOL</span><i></i><span>HEVH</span><i></i><strong>QUALITY</strong></div><button id="quality-motion" class="quality-motion" aria-label="Tạm dừng chuyển động" aria-pressed="false"><span aria-hidden="true">Ⅱ</span></button>
+    </section>
+    <section class="home-functions"><div class="section-title"><h2>Chức năng làm việc</h2><span>Chọn để bắt đầu</span></div><div class="features home-feature-grid">
+      ${[['scan','scan','blue','Quét & thu thập dữ liệu','Barcode · Ảnh label · Excel'],['ckd','ckd','','Kiểm tra CKD','Đối chiếu hai nhãn'],['cut','cut','purple','Cắt chân linh kiện','Tra mã AI ↔ MI'],['holding','box','green','Holding room','Nhập · Xuất · Tồn kho'],['mm','search','cyan','Tra cứu MM','Vật tư & Location'],['account?shortcuts','user','sand','Phím tắt của tôi','Tùy chỉnh theo tài khoản']].map(([route,symbol,color,title,desc]) => `<a class="feature" href="#${route}">${icon('diagonal','class="feature-arrow"')}<div class="feature-icon ${color}">${icon(symbol)}</div><h3>${title}</h3><p>${desc}</p></a>`).join('')}
+    </div></section>
     <div class="stats">${[['scans','scan','Lượt quét'],['materials','search','Mã vật tư MM'],['boxes','ckd','Box đã xác nhận'],['holding','box','Vật tư trong Holding']].map(([key,symbol,label]) => `<div class="stat">${icon(symbol)}<div><strong id="stat-${key}">—</strong><span>${label}</span></div></div>`).join('')}</div>
     <div class="home-foot">${icon('shield')} ${state.user ? `Đã đăng nhập · ${escape(state.user.name)} · ${roleName(state.user.role)}` : 'Đăng nhập để xem dữ liệu và bắt đầu làm việc'}</div>`;
+  $('#quality-motion').onclick=e=>{const button=e.currentTarget,hero=$('.quality-hero'),paused=hero.dataset.paused!=='true';hero.dataset.paused=String(paused);button.setAttribute('aria-pressed',String(paused));button.setAttribute('aria-label',paused?'Tiếp tục chuyển động':'Tạm dừng chuyển động');$('span',button).textContent=paused?'▷':'Ⅱ';};
   if (state.user) try { const stats = await api('/stats'); if (id !== renderId) return; for (const [k, v] of Object.entries(stats)) { const el = $('#stat-' + k); if (el) el.textContent = number(v); } } catch (e) { if (id === renderId) toast(e.message); }
 }
 
 async function account() {
   if (!state.user) {
     $('#main').innerHTML = `${pageTop('Tài khoản', 'Đăng nhập vào Work Area')}<div class="login-layout"><section class="panel"><div class="login-icon">${icon('user')}</div><h2>Chào mừng trở lại</h2><p class="muted">Đăng nhập bằng tài khoản công việc của bạn.</p>${state.needsSetup ? '<div class="notice warning">Quản trị viên chưa thiết lập tài khoản đầu tiên. Vui lòng liên hệ người cài đặt hệ thống.</div>' : ''}<form id="login-form">${field('Tên đăng nhập','username',{placeholder:'Nhập tên đăng nhập',autocomplete:'username',extra:'maxlength="64" autocapitalize="none" spellcheck="false"'})}${field('Mật khẩu','password',{type:'password',placeholder:'Nhập mật khẩu',autocomplete:'current-password',extra:'maxlength="128"'})}<p class="form-message" role="alert"></p><button class="button primary full" type="submit">Đăng nhập ${icon('arrow')}</button></form><div class="mini-meta">${icon('shield')} Tài khoản được cấp bởi quản trị viên</div></section></div>`;
-    formAction('#login-form', async body => { const s = await api('/login', { method: 'POST', data: body }); state.user = s.user; state.csrf = s.csrf; toast('Đăng nhập thành công.'); location.hash = '#home'; }); return;
+    formAction('#login-form', async body => { const s = await api('/login', { method: 'POST', data: body }); state.user = s.user; state.csrf = s.csrf;await loadPreferences();renderNavigation();toast('Đăng nhập thành công.'); location.hash = '#home'; }); return;
   }
   const u = state.user;
   $('#main').innerHTML = `${pageTop('Tài khoản', 'Hồ sơ & quyền truy cập', button('Đăng xuất','logout','','logout'))}<div class="account-layout"><div class="columns"><section class="panel"><div class="profile"><div class="avatar">${escape(u.name.split(' ').map(x => x[0]).filter(Boolean).slice(-2).join('').toUpperCase())}</div><div><h2>${escape(u.name)}</h2><p>@${escape(u.username)}</p></div></div><span class="badge green">${icon('shield')} ${roleName(u.role)}</span><hr class="divider"><h3>Quyền của bạn</h3><ul class="permissions">${['Tra cứu dữ liệu & xuất báo cáo', ...(canWrite() ? ['Lưu lượt quét & xác nhận CKD','Nhập, xuất vật tư Holding'] : []), ...(u.role === 'admin' ? ['Nhập MM, tạo tài khoản & xóa lượt quét'] : [])].map(x => `<li>${icon('check')}${x}</li>`).join('')}</ul><p class="subtle">Phiên đăng nhập có hiệu lực tối đa 8 giờ.</p></section><section class="panel"><h2>Đổi mật khẩu</h2><form id="password-form">${field('Mật khẩu hiện tại','oldPassword',{type:'password',autocomplete:'current-password'})}${field('Mật khẩu mới','password',{type:'password',autocomplete:'new-password',extra:'minlength="8" maxlength="128"',placeholder:'Ít nhất 8 ký tự'})}${field('Nhập lại mật khẩu mới','confirm',{type:'password',autocomplete:'new-password',extra:'minlength="8" maxlength="128"'})}<p class="form-message" role="alert"></p><button class="button full" type="submit">Lưu mật khẩu mới</button></form></section></div>${u.role === 'admin' ? `<section class="panel"><h2>Cấp tài khoản</h2><p class="muted">Chọn đúng quyền cần thiết cho từng người dùng.</p><form id="user-form"><div class="field-row">${field('Tên đăng nhập','username',{extra:'pattern="[a-z0-9._-]{3,64}" minlength="3" maxlength="64" autocapitalize="none"'})}${field('Họ tên','name',{extra:'maxlength="100"'})}</div><div class="field-row">${field('Mật khẩu ban đầu','password',{type:'password',autocomplete:'new-password',extra:'minlength="8" maxlength="128"'})}<div class="field"><label for="role">Quyền truy cập</label><select id="role" name="role"><option value="inspector">Nhân viên kiểm tra</option><option value="viewer">Chỉ xem</option><option value="admin">Quản trị viên</option></select></div></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">${icon('plus')} Tạo tài khoản</button></form><div id="users-list" class="mt"></div></section>` : ''}</div>`;
-  $('#logout').onclick = async () => { try { await api('/logout', { method:'POST' }); state.user = null; state.csrf = null; state.image = null; state.imageName = ''; render(); toast('Đã đăng xuất.'); } catch(e) { toast(e.message); } };
-  formAction('#password-form', async b => { if (b.password !== b.confirm) throw Error('Hai mật khẩu mới không khớp.'); await api('/password', { method:'POST', data:b }); state.user = null; state.csrf = null; render(); toast('Đã đổi mật khẩu. Vui lòng đăng nhập lại.'); });
+  $('#logout').onclick = async () => { try { await api('/logout', { method:'POST' }); state.user = null; state.csrf = null; state.image = null; state.imageName = '';renderNavigation();render(); toast('Đã đăng xuất.'); } catch(e) { toast(e.message); } };
+  formAction('#password-form', async b => { if (b.password !== b.confirm) throw Error('Hai mật khẩu mới không khớp.'); await api('/password', { method:'POST', data:b }); state.user = null; state.csrf = null;renderNavigation();render(); toast('Đã đổi mật khẩu. Vui lòng đăng nhập lại.'); });
   formAction('#user-form', async (b, f) => { await api('/users', { method:'POST', data:b }); f.reset(); toast('Đã tạo tài khoản.'); await usersList(); });
+  shortcutSettings();
   if (u.role === 'admin') await usersList();
+}
+function shortcutSettings() {
+  let draft=[...state.navigation]; const owner=state.user.id;
+  const panel=document.createElement('section');panel.className='panel preferences-panel';panel.id='shortcut-settings';$('.account-layout').append(panel);
+  function draw() {
+    panel.innerHTML=`<div class="preferences-heading"><div class="feature-icon cyan">${icon('plus')}</div><div><h2>Thanh phím tắt của tôi</h2><p class="muted no-margin">Lưu riêng theo tài khoản, dùng lại trên các thiết bị.</p></div></div><p class="muted">Chọn từ 3 đến 5 mục. Kéo để sắp xếp hoặc dùng nút lên/xuống.</p><div class="shortcut-choices">${routes.map(([key,symbol,label])=>`<label><input type="checkbox" data-choice="${key}" ${draft.includes(key)?'checked':''}>${icon(symbol)}<span>${label}</span></label>`).join('')}</div><ol class="shortcut-order">${draft.map((key,i)=>`<li draggable="true" data-order-key="${key}"><span class="shortcut-grip" aria-hidden="true">⠿</span>${icon(routes.find(r=>r[0]===key)[1])}<span>${routes.find(r=>r[0]===key)[2]}</span><button class="button small" data-up="${key}" aria-label="Đưa ${routes.find(r=>r[0]===key)[2]} lên" ${i===0?'disabled':''}>↑</button><button class="button small" data-down="${key}" aria-label="Đưa ${routes.find(r=>r[0]===key)[2]} xuống" ${i===draft.length-1?'disabled':''}>↓</button></li>`).join('')}</ol><p class="subtle">Xem trước thanh phím tắt</p><div class="shortcut-preview">${draft.map(key=>`<span>${icon(routes.find(r=>r[0]===key)[1])}<small>${shortLabels[key]}</small></span>`).join('')}</div><div class="actions mt"><button class="button primary" id="save-shortcuts" ${draft.length<3?'disabled':''}>Lưu phím tắt</button><button class="button" id="reset-shortcuts">Dùng mặc định</button></div><p class="form-message" id="shortcuts-message" role="status"></p>`;
+    panel.querySelectorAll('[data-choice]').forEach(input=>input.onchange=()=>{if(input.checked){if(draft.length===5){input.checked=false;toast('Chọn tối đa 5 phím tắt.');return;}draft.push(input.dataset.choice);}else draft=draft.filter(key=>key!==input.dataset.choice);draw();});
+    const move=(key,step)=>{const i=draft.indexOf(key),j=i+step;if(j>=0&&j<draft.length){[draft[i],draft[j]]=[draft[j],draft[i]];draw();}};
+    panel.querySelectorAll('[data-up]').forEach(b=>b.onclick=()=>move(b.dataset.up,-1));panel.querySelectorAll('[data-down]').forEach(b=>b.onclick=()=>move(b.dataset.down,1));
+    panel.querySelectorAll('[data-order-key]').forEach(li=>{li.ondragstart=e=>e.dataTransfer.setData('text/plain',li.dataset.orderKey);li.ondragover=e=>e.preventDefault();li.ondrop=e=>{e.preventDefault();const from=draft.indexOf(e.dataTransfer.getData('text/plain')),to=draft.indexOf(li.dataset.orderKey);if(from>=0&&to>=0){const [key]=draft.splice(from,1);draft.splice(to,0,key);draw();}};});
+    $('#reset-shortcuts',panel).onclick=()=>{draft=[...defaultNavigation];draw();};
+    $('#save-shortcuts',panel).onclick=async e=>{const button=e.currentTarget;button.disabled=true;try{const result=await api('/preferences',{method:'POST',data:{navigation:draft}});if(state.user?.id!==owner)return;state.navigation=result.navigation;renderNavigation();$('#shortcuts-message',panel).textContent='Đã lưu phím tắt cho tài khoản của bạn.';toast('Đã cập nhật thanh phím tắt.');}catch(error){$('#shortcuts-message',panel).textContent=error.message;}finally{if(button.isConnected)button.disabled=false;}};
+  }
+  draw();if(location.hash.includes('?shortcuts'))requestAnimationFrame(()=>panel.isConnected&&panel.scrollIntoView({block:'start'}));
 }
 async function usersList() {
   try { const { users } = await api('/users'); const el = $('#users-list'); if (el) el.innerHTML = `<div class="table-wrap"><table><thead><tr><th>Người dùng</th><th>Quyền</th></tr></thead><tbody>${users.map(u => `<tr><td>${escape(u.name)}<small>@${escape(u.username)}</small></td><td><span class="badge">${roleName(u.role)}</span></td></tr>`).join('')}</tbody></table></div>`; } catch (e) { toast(e.message); }
@@ -175,7 +205,7 @@ function startCamera() {
   if (!canWrite()) { toast('Cần quyền ghi dữ liệu để sử dụng quét camera.'); return; }
   stopCamera(); const owner=state.user.id, username=state.user.username;
   phoneScanner=new PhoneScanner($('#camera-dialog'),{
-    mode:state.mode,title:$('#scan-session-title')?.value.trim() || `Scan ${state.mode}`,api,pending:pendingRows,
+    mode:state.mode,title:$('#scan-session-title')?.value.trim() || `Scan ${state.mode}`,accountKey:'u'+owner,api,pending:pendingRows,
     enqueue:row=>queue('put',{...row,owner,username}),
     onChanged:()=>{if (state.page === 'scan') Promise.allSettled([loadScans(),showPending()]);},
     onManual:()=>$('#barcode')?.focus(),onAuthExpired:()=>{stopCamera();location.hash='#account';}

@@ -113,6 +113,20 @@ test('Holding transactions prevent negative stock under concurrent requests and 
   assert.equal((await request('/api/holding',inspector,'POST',{ ...payload,request_id:randomUUID(),direction:'out',location:'A-02',qty:1 })).status,409);
 });
 
+test('shortcut preferences are authenticated, validated, private per account and editable by viewers', async () => {
+  assert.equal((await request('/api/preferences')).status,401);
+  assert.deepEqual((await request('/api/preferences',viewer)).data.navigation,['home','scan','assistant','account']);
+  const navigation=['home','ckd','mm','account'];
+  assert.equal((await request('/api/preferences',viewer,'POST',{navigation})).status,200);
+  assert.deepEqual((await request('/api/preferences',viewer)).data.navigation,navigation);
+  assert.deepEqual((await request('/api/preferences',inspector)).data.navigation,['home','scan','assistant','account']);
+  const other=db.prepare('SELECT id FROM users WHERE username=?').get('viewer').id;
+  await request('/api/preferences',admin,'POST',{navigation:['scan','home','account'],user_id:other});
+  assert.deepEqual((await request('/api/preferences',viewer)).data.navigation,navigation,'Caller cannot overwrite another account by passing its ID');
+  for(const invalid of [[],['home','scan'],['home','scan','scan'],['home','scan','<script>'],['home','scan','ckd','mm','account','assistant']])assert.equal((await request('/api/preferences',viewer,'POST',{navigation:invalid})).status,400);
+  assert.equal((await request('/api/preferences',viewer,'POST',{navigation},{'X-CSRF-Token':'wrong'})).status,403);
+});
+
 test('phone scan duplicate checks use all history and recheck atomically before automatic saves', async () => {
   const inspectorId=db.prepare('SELECT id FROM users WHERE username=?').get('inspector').id;
   const insert=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,?,?)');
@@ -174,8 +188,9 @@ test('rejects malformed CSV and persists records after reopening a disk database
   const dir = mkdtempSync(join(tmpdir(),'work-area-test-'));
   try {
     const path = join(dir,'db.sqlite'); const first = openDatabase(path);
-    first.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run('durable','Stored name','not-a-login-password','viewer'); first.close();
-    const second = openDatabase(path); assert.equal(second.prepare('SELECT name FROM users').get().name,'Stored name'); second.close();
+    first.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run('durable','Stored name','not-a-login-password','viewer');
+    first.prepare('INSERT INTO user_preferences(user_id,navigation) VALUES (?,?)').run(1,JSON.stringify(['scan','home','account']));first.close();
+    const second = openDatabase(path); assert.equal(second.prepare('SELECT name FROM users').get().name,'Stored name');assert.deepEqual(JSON.parse(second.prepare('SELECT navigation FROM user_preferences WHERE user_id=1').get().navigation),['scan','home','account']);second.close();
   } finally { rmSync(dir,{ recursive:true,force:true }); }
 });
 

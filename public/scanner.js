@@ -1,3 +1,4 @@
+import { fitScanRect,resizeScanRect,enhanceGlare } from '/scanner-tools.js?v=20261113-2';
 const symbols = {
   back:'<path d="M19 12H5m6-6-6 6 6 6"/>',
   flash:'<path d="m13 2-9 12h7l-1 8L21 9h-8Z"/>',
@@ -7,6 +8,7 @@ const symbols = {
   barcode:'<path d="M3 4v16M6 4v16M10 4v16M12 4v16M16 4v16M20 4v16"/>',
   qr:'<path d="M3 3h6v6H3Zm12 0h6v6h-6ZM3 15h6v6H3Zm12 0h3v3h3v3h-6Zm-3-3h3m3 0h3M12 3v6m0 9v3"/>',
   check:'<path d="m4 12 5 5L20 6"/>'
+  ,glare:'<circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l2 2m10 10 2 2M5 19l2-2M17 7l2-2M3 21 21 3"/>'
 };
 const svg = name => `<svg viewBox="0 0 24 24" aria-hidden="true">${symbols[name]}</svg>`;
 const clean = value => String(value ?? '').trim().toUpperCase();
@@ -27,6 +29,7 @@ function zxing() {
 export class PhoneScanner {
   constructor(dialog, options) {
     this.dialog=dialog; this.options=options; this.epoch=0; this.saved=0; this.queued=0; this.seen=new Map(); this.alerts=[];
+    this.pointers=new Map();this.digitalZoom=1;this.opticalZoom=1;this.videoPan={x:0,y:0};this.glare=false;this.framePass=0;
     this.format=pref('format','barcode') === 'qr' ? 'qr' : 'barcode'; this.sound=pref('sound','true') === 'true'; this.vibration=pref('vibration','true') === 'true';
     this.canvas=document.createElement('canvas'); this.context=this.canvas.getContext('2d',{willReadFrequently:true});
     dialog.className='phone-scanner'; dialog.setAttribute('aria-label','Quét mã bằng điện thoại');
@@ -38,11 +41,11 @@ export class PhoneScanner {
         <p class="scanner-count" id="scanner-count">Đã lưu 0 lượt trong lần mở camera này</p>
         <button class="scanner-repeat" id="scanner-repeat" disabled>Quét lại cùng mã</button>
         <div class="scanner-alerts" id="scanner-alerts" aria-live="polite"></div>
-      </section><div class="scanner-body"><div class="scanner-frame" id="scanner-frame"><span class="scanner-corner tl"></span><span class="scanner-corner tr"></span><span class="scanner-corner bl"></span><span class="scanner-corner br"></span><div class="scanner-laser"></div><span class="scanner-frame-label" id="scanner-frame-label">Đặt barcode vào trong khung</span></div></div>
+      </section><div class="scanner-body"><div class="scanner-frame" id="scanner-frame" tabindex="0" role="group" aria-label="Vùng quét: kéo để di chuyển, kéo góc để đổi kích thước. Phím mũi tên để di chuyển, cộng trừ để đổi cỡ.">${['tl','tr','bl','br'].map(corner=>`<button type="button" class="scanner-corner ${corner}" data-resize="${corner}" aria-label="Kéo góc ${corner} để thay đổi kích thước vùng quét"></button>`).join('')}<div class="scanner-laser"></div><span class="scanner-frame-label" id="scanner-frame-label">Đặt barcode vào trong khung</span></div></div>
       <section class="scanner-controls" aria-label="Điều khiển camera"><div class="scanner-formats" role="tablist" aria-label="Định dạng mã"><button id="scanner-barcode" role="tab">${svg('barcode')} Barcode</button><button id="scanner-qr" role="tab">${svg('qr')} QR</button></div>
-        <div class="scanner-tools"><label class="scanner-zoom-label"><span class="sr-only">Mức phóng đại camera</span><select id="scanner-zoom" aria-label="Mức phóng đại camera" disabled><option value="1">×1</option></select></label><div class="scanner-round-tools"><button class="scanner-round" id="scanner-flip" aria-label="Đổi camera" disabled>${svg('flip')}</button><button class="scanner-round" id="scanner-vibration" aria-label="Rung khi đọc mã">${svg('vibration')}</button><button class="scanner-round" id="scanner-sound" aria-label="Âm thanh khi đọc mã">${svg('sound')}</button></div></div>
+        <div class="scanner-tools"><label class="scanner-zoom-label"><span class="sr-only">Mức phóng đại camera</span><select id="scanner-zoom" aria-label="Mức phóng đại camera" disabled><option value="1">×1</option></select></label><div class="scanner-round-tools"><button class="scanner-round" id="scanner-flip" aria-label="Đổi camera" disabled>${svg('flip')}</button><button class="scanner-round" id="scanner-vibration" aria-label="Rung khi đọc mã">${svg('vibration')}</button><button class="scanner-round" id="scanner-sound" aria-label="Âm thanh khi đọc mã">${svg('sound')}</button></div></div><div class="scanner-assist"><button id="scanner-glare" aria-pressed="false">${svg('glare')} Nhãn bóng / chói</button><button id="scanner-reset-view">Đặt lại khung</button></div><p class="scanner-assist-note" id="scanner-assist-note" hidden></p>
       </section><div class="scanner-bottom"><button class="scanner-back" id="scanner-back" aria-label="Đóng camera">${svg('back')}</button><button class="scanner-manual" id="scanner-manual">Nhập mã bằng tay</button><button class="scanner-flash" id="scanner-flash" aria-label="Bật đèn flash" aria-pressed="false" disabled>${svg('flash')}</button></div></div>`;
-    this.$=s => dialog.querySelector(s); this.video=this.$('video');
+    this.$=s => dialog.querySelector(s); this.video=this.$('video');this.$('.scanner-body').append(this.$('#scanner-frame-label'));
     this.$('#scanner-title').textContent=options.title || `Scan ${options.mode}`;
     this.$('#scanner-back').onclick=() => this.close();
     this.$('#scanner-manual').onclick=() => { this.close(); options.onManual?.(); };
@@ -52,6 +55,8 @@ export class PhoneScanner {
     this.$('#scanner-vibration').onclick=() => { this.vibration=!this.vibration; remember('vibration',this.vibration); this.settings(); if (this.vibration) navigator.vibrate?.(40); };
     this.$('#scanner-flash').onclick=() => this.flash(); this.$('#scanner-flip').onclick=() => this.flip();
     this.$('#scanner-zoom').onchange=e => this.zoom(Number(e.target.value));
+    this.$('#scanner-glare').onclick=()=>this.setGlare(!this.glare);this.$('#scanner-reset-view').onclick=()=>this.resetView();
+    this.installGestures();
     this.onClose=() => this.release(); dialog.addEventListener('close',this.onClose);
     this.settings(); this.formatUI();
   }
@@ -74,11 +79,11 @@ export class PhoneScanner {
   formatUI() {
     this.dialog.dataset.format=this.format;
     for (const format of ['barcode','qr']) { const b=this.$('#scanner-' + format); b.classList.toggle('active',this.format === format); b.setAttribute('aria-selected',String(this.format === format)); }
-    this.$('#scanner-frame-label').textContent=this.format === 'qr' ? 'Đặt mã QR vào trong khung' : 'Đặt barcode vào trong khung';
+    this.$('#scanner-frame-label').textContent=(this.format === 'qr' ? 'QR' : 'Barcode')+' · Kéo khung / kéo góc · Chụm 2 ngón để zoom';
   }
   async changeFormat(format) {
     if (this.format === format || this.changing) return;
-    this.changing=true; this.format=format; remember('format',format); this.formatUI(); this.candidate=''; this.hits=0; this.latched='';
+    this.changing=true; this.saveRoi();this.format=format; remember('format',format); this.formatUI();this.roi=null;this.layoutRoi();this.candidate=''; this.hits=0; this.latched='';
     try { await this.prepareDecoder(); } catch(e) { this.paint('error',e.message); }
     finally { this.changing=false; }
   }
@@ -102,14 +107,15 @@ export class PhoneScanner {
     if (!this.active || epoch !== this.epoch) { this.releaseStream(); return; }
     this.track=stream.getVideoTracks()[0]; this.torch=false;
     let caps={}; try { caps=this.track.getCapabilities?.() || {}; } catch {}
-    this.caps=caps;
+    this.caps=caps;this.opticalZoom=Number(this.track.getSettings?.().zoom)||1;this.digitalZoom=1;this.videoPan={x:0,y:0};this.applyVideoTransform();
+    this.originalExposure=this.track.getSettings?.().exposureCompensation;
     const flash=this.$('#scanner-flash'); flash.disabled=!caps.torch; flash.setAttribute('aria-pressed','false'); flash.classList.remove('enabled'); flash.title=caps.torch ? 'Bật/tắt đèn flash' : 'Camera này không hỗ trợ đèn flash';
     const zoom=this.$('#scanner-zoom'); zoom.replaceChildren();
-    if (caps.zoom && Number.isFinite(caps.zoom.min) && caps.zoom.max > caps.zoom.min) {
-      const values=[caps.zoom.min,this.track.getSettings?.().zoom || caps.zoom.min,1,1.5,2,3,4,caps.zoom.max].filter(v=>v>=caps.zoom.min && v<=Math.min(caps.zoom.max,6)).map(v=>Math.min(caps.zoom.max,Number((caps.zoom.min+Math.round((v-caps.zoom.min)/(caps.zoom.step || .1))*(caps.zoom.step || .1)).toFixed(3))));
-      for (const value of [...new Set(values)].sort((a,b)=>a-b)) { const option=new Option('×' + value,value); zoom.add(option); }
-      zoom.disabled=false; zoom.value=String(this.track.getSettings?.().zoom || caps.zoom.min); zoom.title='Phóng đại camera';
-    } else { zoom.add(new Option('×1',1)); zoom.disabled=true; zoom.title='Camera này không hỗ trợ zoom'; }
+    this.zoomMin=caps.zoom?.min || 1;this.zoomMax=Math.max(4,Math.min(caps.zoom?.max || 4,6));
+    for (const value of [...new Set([this.zoomMin,this.opticalZoom,1,1.5,2,3,4,this.zoomMax])].filter(v=>v>=this.zoomMin&&v<=this.zoomMax).sort((a,b)=>a-b)) zoom.add(new Option('×'+value,value));
+    zoom.disabled=false;zoom.value=String(this.opticalZoom);zoom.title='Chọn mức zoom hoặc chụm hai ngón trên vùng camera';
+    if (Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) try {await this.track.applyConstraints({advanced:[{focusMode:'continuous'}]});} catch {}
+    this.layoutRoi();if(this.glare)await this.setGlare(true);
     try { this.devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind === 'videoinput'); } catch { this.devices=[]; }
     this.$('#scanner-flip').disabled=this.devices.length < 2;
   }
@@ -123,11 +129,13 @@ export class PhoneScanner {
     if (w<=0 || h<=0) return false;
     const ratio=Math.min(1,960/w); const width=Math.max(1,Math.round(w*ratio)),height=Math.max(1,Math.round(h*ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width=width; this.canvas.height=height; }
-    this.context.drawImage(this.video,x,y,w,h,0,0,width,height); return true;
+    this.context.drawImage(this.video,x,y,w,h,0,0,width,height);
+    if(this.glare && (++this.framePass%4)!==0) {const image=this.context.getImageData(0,0,width,height);enhanceGlare(image,{invert:this.framePass%4===3});this.context.putImageData(image,0,0);}
+    return true;
   }
   async loop(epoch) {
     if (!this.active || epoch !== this.epoch) return;
-    if (!this.busy && !this.changing && this.capture()) {
+    if (!this.busy && !this.changing && !this.zoomApplying && !this.gesture && this.capture()) {
       let value='';
       try {
         if (this.detector) value=(await this.detector.detect(this.canvas))[0]?.rawValue || '';
@@ -136,9 +144,10 @@ export class PhoneScanner {
       if (!this.active || epoch !== this.epoch) return;
       value=clean(value);
       if (value && value.length<=500) {
-        if (value === this.candidate) this.hits++; else { this.candidate=value; this.hits=1; }
+        if (value === this.candidate && Date.now()-(this.candidateTime||0)<1800) this.hits++; else { this.candidate=value; this.hits=1; }
+        this.candidateTime=Date.now();
         if (this.hits>=2 && value !== this.latched) { this.latched=value; await this.accept(value); }
-      } else { this.candidate=''; this.hits=0; }
+      } else if(Date.now()-(this.candidateTime||0)>1800) { this.candidate=''; this.hits=0; }
     }
     if (this.active && epoch === this.epoch) this.timer=setTimeout(()=>this.loop(epoch),this.reader ? 300 : 180);
   }
@@ -192,15 +201,74 @@ export class PhoneScanner {
     try { this.audio.resume().catch(()=>{}); const oscillator=this.audio.createOscillator(),gain=this.audio.createGain(),now=this.audio.currentTime; oscillator.frequency.value=duplicate ? 280 : 1000; gain.gain.setValueAtTime(.035,now); gain.gain.exponentialRampToValueAtTime(.001,now+.14); oscillator.connect(gain); gain.connect(this.audio.destination); oscillator.start(now); oscillator.stop(now+.15); } catch {}
   }
   async flash() {
-    if (!this.track || !this.caps?.torch) return;
+    if (!this.track || !this.caps?.torch || this.glare) return;
     const button=this.$('#scanner-flash'); button.disabled=true;
     try { const on=!this.torch; await this.track.applyConstraints({advanced:[{torch:on}]}); this.torch=on; button.setAttribute('aria-pressed',String(on)); button.classList.toggle('enabled',on); button.setAttribute('aria-label',on ? 'Tắt đèn flash' : 'Bật đèn flash'); }
     catch { this.paint('error','Thiết bị không bật được đèn flash. Bạn vẫn có thể tiếp tục quét.'); }
     finally { if (this.active) button.disabled=false; }
   }
   async zoom(value) {
-    if (!this.track || !this.caps?.zoom) return;
-    try { await this.track.applyConstraints({advanced:[{zoom:value}]}); } catch { this.paint('error','Thiết bị chưa áp dụng được mức zoom này.'); this.$('#scanner-zoom').value=String(this.track.getSettings?.().zoom || this.caps.zoom.min); }
+    if (!this.track) return;
+    this.nextZoom=Math.min(this.zoomMax,Math.max(this.zoomMin,value));if(this.zoomApplying)return;
+    this.zoomApplying=true;
+    try {while(this.nextZoom!==null && this.active && this.track){const target=this.nextZoom;this.nextZoom=null;const track=this.track;
+      if(this.caps?.zoom){const cap=this.caps.zoom,step=cap.step||.1,hardware=Math.min(cap.max,Math.max(cap.min,cap.min+Math.floor((target-cap.min)/step+1e-8)*step));
+        try {await track.applyConstraints({advanced:[{zoom:hardware}]});if(track!==this.track)break;this.opticalZoom=hardware;} catch {this.opticalZoom=Number(track.getSettings?.().zoom)||this.opticalZoom||1;}
+      }else this.opticalZoom=1;
+      this.digitalZoom=Math.max(1,target/this.opticalZoom);this.applyVideoTransform();
+      const effective=Number((this.opticalZoom*this.digitalZoom).toFixed(2)),select=this.$('#scanner-zoom');select.querySelectorAll('[data-transient]').forEach(x=>x.remove());if(![...select.options].some(o=>Number(o.value)===effective)){const option=new Option('×'+effective,effective);option.dataset.transient='true';select.add(option);}select.value=String(effective);
+    }}finally{this.zoomApplying=false;}
+  }
+  applyVideoTransform() {
+    const width=this.dialog.clientWidth,height=this.dialog.clientHeight,z=this.digitalZoom||1;
+    const maxX=width*(z-1)/2,maxY=height*(z-1)/2;
+    this.videoPan.x=Math.min(maxX,Math.max(-maxX,this.videoPan.x));this.videoPan.y=Math.min(maxY,Math.max(-maxY,this.videoPan.y));
+    this.video.style.transform=`translate(${this.videoPan.x}px,${this.videoPan.y}px) scale(${z})`;
+  }
+  roiBounds() {const b=this.$('.scanner-body').getBoundingClientRect();return {left:b.left,top:b.top,width:Math.max(1,b.width),height:Math.max(1,b.height-30)};}
+  layoutRoi(reset=false) {
+    const bounds=this.roiBounds();if(bounds.width<=1||bounds.height<=1)return;
+    if(!this.roi&&!reset)try{const saved=JSON.parse(pref('roi-'+(this.options.accountKey||'default')+'-'+this.format,'null'));if(saved&&['x','y','w','h'].every(k=>Number.isFinite(saved[k])&&saved[k]>=0&&saved[k]<=1))this.roi=saved;}catch{}
+    let rect;
+    if(!this.roi||reset){const side=Math.min(bounds.width*.67,bounds.height*.8,290),w=this.format==='qr'?side:bounds.width*.94,h=this.format==='qr'?side:Math.min(innerHeight*.21,bounds.height*.8,185);rect={x:(bounds.width-w)/2,y:(bounds.height-h)/2,w,h};}
+    else rect={x:this.roi.x*bounds.width,y:this.roi.y*bounds.height,w:this.roi.w*bounds.width,h:this.roi.h*bounds.height};
+    this.setRoi(rect,bounds);
+  }
+  setRoi(rect,bounds=this.roiBounds()) {
+    const fit=fitScanRect(rect,bounds.width,bounds.height,this.format==='qr');
+    Object.assign(this.$('#scanner-frame').style,{left:fit.x+'px',top:fit.y+'px',width:fit.w+'px',height:fit.h+'px'});
+    this.roi={x:fit.x/bounds.width,y:fit.y/bounds.height,w:fit.w/bounds.width,h:fit.h/bounds.height};
+  }
+  saveRoi() {if(this.roi)remember('roi-'+(this.options.accountKey||'default')+'-'+this.format,JSON.stringify(this.roi));}
+  resetView() {this.roi=null;this.videoPan={x:0,y:0};this.layoutRoi(true);this.saveRoi();this.zoom(Math.max(1,this.zoomMin||1));}
+  installGestures() {
+    const body=this.$('.scanner-body'),frame=this.$('#scanner-frame');
+    const rect=()=>{const r=frame.getBoundingClientRect(),b=this.roiBounds();return{x:r.left-b.left,y:r.top-b.top,w:r.width,h:r.height};};
+    body.onpointerdown=e=>{if(!this.active)return;e.preventDefault();this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});try{body.setPointerCapture(e.pointerId);}catch{}
+      const points=[...this.pointers.values()];
+      if(points.length===2){this.gesture={type:'pinch',distance:Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y),zoom:this.opticalZoom*this.digitalZoom,mid:{x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2},pan:{...this.videoPan}};}
+      else if(points.length===1)this.gesture={type:e.target.closest('[data-resize]')?'resize':e.target.closest('#scanner-frame')?'move':this.digitalZoom>1?'pan':'move',corner:e.target.closest('[data-resize]')?.dataset.resize,start:{x:e.clientX,y:e.clientY},rect:rect(),pan:{...this.videoPan}};
+    };
+    body.onpointermove=e=>{if(!this.pointers.has(e.pointerId)||!this.gesture)return;e.preventDefault();this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});const g=this.gesture,b=this.roiBounds();
+      if(g.type==='pinch'){const p=[...this.pointers.values()];if(p.length<2)return;this.zoom(g.zoom*Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)/Math.max(1,g.distance));this.videoPan={x:g.pan.x+(p[0].x+p[1].x)/2-g.mid.x,y:g.pan.y+(p[0].y+p[1].y)/2-g.mid.y};this.applyVideoTransform();}
+      else {const dx=e.clientX-g.start.x,dy=e.clientY-g.start.y;if(g.type==='resize')this.setRoi(resizeScanRect(g.rect,g.corner,dx,dy,b.width,b.height,this.format==='qr'),b);else if(g.type==='pan'){this.videoPan={x:g.pan.x+dx,y:g.pan.y+dy};this.applyVideoTransform();}else this.setRoi({...g.rect,x:g.rect.x+dx,y:g.rect.y+dy},b);}
+    };
+    const finish=e=>{this.pointers.delete(e.pointerId);this.gesture=null;this.hits=0;this.saveRoi();};body.onpointerup=finish;body.onpointercancel=finish;
+    frame.onkeydown=e=>{const r=rect(),step=e.shiftKey?20:8;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();this.setRoi({...r,x:r.x+(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0),y:r.y+(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)});this.saveRoi();}else if(['+','=','-'].includes(e.key)){e.preventDefault();const factor=e.key==='-'?.9:1.1;this.setRoi({...r,w:r.w*factor,h:r.h*factor});this.saveRoi();}};
+    this.resizeObserver=new ResizeObserver(()=>{if(this.active){this.layoutRoi();this.applyVideoTransform();}});this.resizeObserver.observe(body);
+  }
+  async setGlare(on) {
+    this.glare=on;const button=this.$('#scanner-glare');button.setAttribute('aria-pressed',String(on));button.classList.toggle('enabled',on);
+    const note=this.$('#scanner-assist-note');note.hidden=!on;note.textContent='Nghiêng nhẹ điện thoại để tránh phản chiếu. Vùng cháy trắng cần đổi góc hoặc ánh sáng.';
+    const track=this.track;if(!track)return;
+    try {
+      const advanced={};if(on&&this.caps.torch){advanced.torch=false;this.torch=false;this.$('#scanner-flash').setAttribute('aria-pressed','false');this.$('#scanner-flash').classList.remove('enabled');}
+      if(Array.isArray(this.caps.focusMode)&&this.caps.focusMode.includes('continuous'))advanced.focusMode='continuous';
+      if(Array.isArray(this.caps.exposureMode)&&this.caps.exposureMode.includes('continuous'))advanced.exposureMode='continuous';
+      const exposure=this.caps.exposureCompensation;if(exposure&&Number.isFinite(exposure.min)&&Number.isFinite(exposure.max)){const target=on?-1:Number.isFinite(this.originalExposure)?this.originalExposure:0,step=exposure.step||.1;advanced.exposureCompensation=Math.min(exposure.max,Math.max(exposure.min,exposure.min+Math.round((target-exposure.min)/step)*step));}
+      if(Object.keys(advanced).length)await track.applyConstraints({advanced:[advanced]});
+    }catch{note.textContent='Đang tăng tương phản ảnh đọc. Camera chưa áp dụng được giảm phơi sáng; hãy nghiêng nhẹ để tránh phản chiếu.';}
+    this.$('#scanner-flash').disabled=!this.caps.torch||on;
   }
   async flip() {
     if (this.changing || !this.devices?.length) return;
@@ -212,7 +280,7 @@ export class PhoneScanner {
   releaseStream() { this.stream?.getTracks().forEach(t=>t.stop()); this.stream=null; this.track=null; if (this.video) this.video.srcObject=null; }
   release() {
     if (!this.active) return;
-    this.active=false; this.epoch++; clearTimeout(this.timer); this.releaseStream(); this.audio?.close().catch(()=>{}); document.body.classList.remove('scanner-open'); this.dialog.removeEventListener('close',this.onClose); this.options.onChanged?.();
+    this.saveRoi();this.resizeObserver?.disconnect();this.pointers.clear();this.gesture=null;this.active=false; this.epoch++; clearTimeout(this.timer); this.releaseStream(); this.audio?.close().catch(()=>{}); document.body.classList.remove('scanner-open'); this.dialog.removeEventListener('close',this.onClose); this.options.onChanged?.();
   }
   close() { if (this.dialog.open) this.dialog.close(); this.release(); }
 }

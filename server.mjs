@@ -68,14 +68,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/scanner.js':['scanner.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'phone-scan-20261113-1' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'workspace-ui-20261113-2' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -107,6 +107,17 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const u = sessionUser(db, req.headers.cookie);
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');
       if (mutating && req.headers['x-csrf-token'] !== u.csrf) fail(403, 'Phiên thao tác không hợp lệ. Hãy tải lại trang.');
+      if (req.method === 'GET' && path === '/api/preferences') {
+        const row=db.prepare('SELECT navigation,updated_at FROM user_preferences WHERE user_id=?').get(u.id);
+        return send(res,200,{navigation:row ? JSON.parse(row.navigation) : ['home','scan','assistant','account'],updated_at:row?.updated_at || null});
+      }
+      if (req.method === 'POST' && path === '/api/preferences') {
+        const body=await jsonBody(req),navigation=body.navigation;
+        const allowed=['home','scan','ckd','cut','holding','mm','assistant','account'];
+        if (!Array.isArray(navigation) || navigation.length<3 || navigation.length>5 || new Set(navigation).size!==navigation.length || navigation.some(x=>typeof x!=='string' || !allowed.includes(x))) fail(400,'Chọn từ 3 đến 5 phím tắt khác nhau trong danh sách.');
+        db.prepare('INSERT INTO user_preferences(user_id,navigation) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET navigation=excluded.navigation,updated_at=CURRENT_TIMESTAMP').run(u.id,JSON.stringify(navigation));
+        return send(res,200,{navigation});
+      }
       if (req.method === 'POST' && path === '/api/logout') {
         db.prepare('DELETE FROM sessions WHERE token_hash=?').run(u.token_hash);
         return send(res, 200, { ok: true }, { 'Set-Cookie': cookie('', true) });

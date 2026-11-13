@@ -5,9 +5,13 @@
 ## Chức năng
 
 - Đăng nhập, hồ sơ, đổi mật khẩu và phân quyền `admin`, `inspector`, `viewer` tại server.
+- Trang chủ có banner động HANSOL · HEVH · IQC · Chất lượng, hỗ trợ tạm dừng và chế độ giảm chuyển động của thiết bị. Quét & thu thập dữ liệu nằm trong nhóm ô chức năng.
+- Mỗi tài khoản tự chọn 3–5 phím tắt, thay đổi thứ tự và dùng lại bố cục đã lưu trên thiết bị khác.
 - Quét HS / Stock / Label bằng bàn phím, máy scan hoặc camera điện thoại.
 - Camera toàn màn hình: Barcode / QR, quét liên tục, tự lưu mã mới, cảnh báo trùng, đếm lượt; zoom, flash, âm thanh, rung và đổi camera khi thiết bị hỗ trợ.
 - Giữ một mã trước camera không tạo thêm lượt liên tục. Mã đã có chỉ được lưu thêm khi người dùng chủ động chọn.
+- Kéo khung để di chuyển, kéo góc để đổi kích thước, chụm hai ngón để zoom; có zoom ảnh khi camera không hỗ trợ zoom quang học và nút đặt lại khung.
+- Chế độ Nhãn bóng / chói tắt flash, giảm bù phơi sáng nếu thiết bị hỗ trợ và thử tăng tương phản ảnh đọc. Vùng phản chiếu trắng hoàn toàn vẫn cần đổi góc hoặc ánh sáng.
 - Kiểm tra trùng toàn bộ lịch sử dùng chung theo loại quét, kể cả khi hai thiết bị quét cùng lúc.
 - Giữ lượt quét bằng IndexedDB khi mất mạng và đồng bộ thủ công, chống ghi lặp khi gửi lại yêu cầu.
 - Lưu ảnh label đính kèm, xem lịch sử và xuất báo cáo `.xlsx`.
@@ -34,9 +38,9 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-15 bài kiểm tra server bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu và định dạng Excel.
+19 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, riêng tư phím tắt theo tài khoản và ranh giới vùng quét.
 
-Giao diện camera đã được thử bằng video mô phỏng và giải mã ảnh QR / Code128. Hoạt động flash, zoom và rung trên phần cứng thật phụ thuộc thiết bị/trình duyệt.
+Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
 ## Cài với Docker trên Linux
 
