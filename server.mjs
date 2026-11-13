@@ -82,7 +82,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'styled-reports-20261113-15' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-inline-20261113-16' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -167,7 +167,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (req.method === 'POST' && ['/api/ckd/pair/check','/api/ckd/pair/save'].includes(path)) {
         const b=await jsonBody(req);if(path.endsWith('/save'))writeAccess(u);
         const images=[];
-        if(path.endsWith('/save')&&b.images){if(typeof b.images!=='object'||Array.isArray(b.images)||Object.keys(b.images).some(k=>!['samsung','item'].includes(k)))fail(400,'Ảnh CKD không hợp lệ.');for(const slot of ['samsung','item'])if(b.images[slot])images.push({slot,...imageData(b.images[slot])});}
+        if(path.endsWith('/save')&&b.images){if(typeof b.images!=='object'||Array.isArray(b.images)||Object.keys(b.images).some(k=>!['samsung','item'].includes(k)))fail(400,'Ảnh CKD không hợp lệ.');for(const slot of ['samsung','item'])if(b.images[slot]){const value=b.images[slot],source=typeof value==='string'?value:value?.source;const parsed={slot,...imageData(source)};if(!parsed.buffer)fail(400,'Missing capture image');if(typeof value==='object'&&value.thumbnail){const thumb=imageData(value.thumbnail);if(thumb.mime!=='image/jpeg'||thumb.buffer.length>65536)fail(400,'Invalid image thumbnail');parsed.thumbnail=thumb.buffer;}images.push(parsed);}}
         try {const result=path.endsWith('/save')?saveCkd(db,b,u.id,images):checkCkd(db,b);return send(res,path.endsWith('/save')&&!result.duplicate?201:200,result);}catch(e){fail(400,e.message);}
       }
       const ckdImage=/^\/api\/ckd\/checks\/(\d+)\/image\/(samsung|item)$/.exec(path);

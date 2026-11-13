@@ -38,6 +38,8 @@
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
 - Toàn bộ báo cáo Excel (HS / Stock / Label / CKD / Holding / box) dùng bố cục HANSOL / HEVH: tiêu đề, phạm vi, người xuất, thời gian GMT+7, cột tự định cỡ, ngắt dòng, số có phân cách hàng nghìn và giữ phần thập phân, ngày giờ chuẩn, cố định/lọc đầu bảng, màu PASS/NG và Đủ/Thiếu/Dư. Có thiết lập khổ giấy ngang, lặp tiêu đề và đánh số trang khi in.
 - CKD có sheet Tổng quan trước các sheet chi tiết. ZIP có report.xlsx, hướng dẫn giải nén và liên kết mở ảnh của từng lượt. Mã có số 0 đầu giữ dạng văn bản; nội dung người dùng không được chuyển thành công thức Excel.
+- Bảng check CKD có bút sửa Samsung, ITEM và MOQ, tự tính lại sau khi sửa; không có ô mã box hoặc nút tính lại. Mã lượt lưu được tạo ngầm và chống gửi lặp bằng request_id.
+- Sheet Lượt scan có STT, Samsung, ITEM, QTY, Đủ/Dư/Thiếu, Vendor, ảnh Samsung/ITEM chèn trực tiếp, người scan và giờ scan GMT+7. Ảnh xem trước nhỏ được lưu cùng ảnh gốc từ camera; ZIP giữ toàn bộ ảnh gốc. Báo cáo giữ phong cách định dạng chung và liên kết mở ảnh gốc sau khi giải nén.
 
 ## Yêu cầu
 
@@ -58,7 +60,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-49 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, định dạng báo cáo, mã có số 0 đầu, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
+51 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, ảnh nhúng và ảnh gốc, tự tạo mã lượt, định dạng báo cáo, mã có số 0 đầu, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 

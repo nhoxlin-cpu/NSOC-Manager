@@ -21,3 +21,9 @@ test('empty sheets stay present and photo links only point to safe relative ZIP 
   const empty=reportWorkbook([{name:'Tổng quan',rows:[['Nội dung','Giá trị']]}],meta);assert.match(empty.toString(),/Chưa có dữ liệu/);
   const result=renderReportSheet({name:'Ảnh',rows:[['ID','Ảnh Samsung','Ảnh ITEM'],[1,'images/SO-1/check-1-samsung.jpg','images/../../unsafe.jpg']]},0,{...meta,imageLinks:true});assert.match(result.relations,/images\/SO-1\/check-1-samsung.jpg/);assert.doesNotMatch(result.relations,/unsafe/);assert.match(result.xml,/Mở ảnh/);
 });
+test('report photo cells embed thumbnails into the workbook with drawing relationships',()=>{
+  const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOuIAAAAASUVORK5CYII=','base64');
+  const bytes=reportWorkbook([{name:'Ảnh scan',rows:[['STT','Ảnh Samsung'],[1,'Ảnh scan']],images:[{row:8,col:1,data:image,mime:'image/png',alt:'Samsung'}]}],meta);
+  const raw=bytes.toString();for(const pattern of [/xl\/media\/report-1-1.png/,/drawing1.xml/,/oneCellAnchor/,/rIdDrawing/,/rId1/])assert.match(raw,pattern);assert.ok(bytes.includes(image));
+  const book=XLSX.read(bytes,{type:'buffer'});assert.equal(book.Sheets['Ảnh scan'].A8.v,1);
+});

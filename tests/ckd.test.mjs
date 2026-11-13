@@ -67,6 +67,9 @@ test('NG is saved only on explicit choice and never counts; duplicate box and re
     assert.throws(()=>save({box_ref:box}),/đã được lưu/);assert.equal(checkCkd(db,pair).total,5000);
   }finally{db.close();}
 });
+test('box identifiers are generated internally when omitted and request retries stay idempotent',()=>{
+  const {db,pair}=fixture();try{const payload={...pair,request_id:randomUUID()};const first=saveCkd(db,payload,1);assert.equal(first.check.total,0);assert.equal(saveCkd(db,payload,1).duplicate,true);assert.equal(checkCkd(db,pair).total,5000);}finally{db.close();}
+});
 test('ambiguous MOQ requires explicit integer quantity and missing SO or maker never passes',()=>{
   const {db,pair,save}=fixture();try{
     db.prepare("UPDATE ckd_models SET moq=NULL,moq_text='1st:1500 / 2nd:2000'").run();assert.equal(checkCkd(db,pair).needs_qty,true);assert.throws(()=>save(),/MOQ/);
