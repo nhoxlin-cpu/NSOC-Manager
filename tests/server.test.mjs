@@ -9,6 +9,7 @@ import { parseCSV, excel } from '../lib/formats.mjs';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import XLSX from '../lib/vendor/sheetjs-0.20.3.cjs';
 
 let db, server, base, admin, inspector, viewer;
 const password = 'only-a-test-password-2026';
@@ -281,6 +282,21 @@ test('CKD pair routes enforce authentication, CSRF and roles; history and export
   const exported=await fetch(base+'/api/ckd/export?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(exported.status,200);assert.match(Buffer.from(await exported.arrayBuffer()).toString(),/Test description/);
   assert.equal((await request('/api/ckd/import',viewer,'POST',{name:'bad.xlsx',file:'invalid'})).status,403);
   assert.equal((await request('/api/ckd/import',inspector,'POST',{name:'bad.xlsx',file:'data:application/octet-stream;base64,YmFk'})).status,400);
+});
+
+test('Excel MM import authorizes uploads, imports every sheet atomically and shares decimal Stock quantities',async()=>{
+  const wb=XLSX.utils.book_new(),columns=['LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY','LOT_NO','BP_NM'];
+  for(let i=1;i<=3;i++)XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([columns,['SHELF-'+i,'EXCEL-WORKBOOK-ITEM','Excel item '+i,'SPEC-X','EXCEL-BAR-'+i,i+.75,'LOT-'+i,'Vendor']]),'Sheet '+i);
+  const body=()=>({name:'synthetic.xlsx',file:'data:application/vnd.openxmlformats-officedocument.spreadsheetml.sheet;base64,'+Buffer.from(XLSX.write(wb,{type:'buffer',bookType:'xlsx'})).toString('base64')});
+  assert.equal((await request('/api/materials/import',viewer,'POST',body())).status,403);
+  assert.equal((await request('/api/materials/import',admin,'POST',body(),{'X-CSRF-Token':'wrong'})).status,403);
+  const result=await request('/api/materials/import',admin,'POST',body());assert.equal(result.status,200);assert.equal(result.data.count,3);assert.deepEqual(result.data.sheets.map(s=>s.rows),[1,1,1]);
+  const rows=await request('/api/materials?field=item_code&q=EXCEL-WORKBOOK-ITEM',viewer);assert.equal(rows.data.matched,3);assert.equal(new Set(rows.data.materials.map(r=>r.source_sheet)).size,3);
+  const scanned=await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'EXCEL-BAR-3',mode:'Stock'});assert.equal(scanned.status,201);assert.equal(scanned.data.stock.quantity,3.75);assert.equal(scanned.data.stock.lot_no,'LOT-3');assert.equal(scanned.data.stock.vendor,'Vendor');
+  const before=db.prepare('SELECT COUNT(*) n FROM mm_inventory').get().n;
+  XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Not MM data']]),'Bad Sheet');
+  assert.equal((await request('/api/materials/import',admin,'POST',body())).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM mm_inventory').get().n,before);
+  assert.equal((await request('/api/materials?offset=-1',viewer)).status,400);
 });
 
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {

@@ -1,5 +1,5 @@
 import { renderCkd } from '/ckd.js?v=20261113-10';
-import { PhoneScanner, zxing } from '/scanner.js?v=20261113-7';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261113-mm10';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -38,9 +38,9 @@ function connection(ok) {
   state.connected = ok; const el = $('#connection');
   el.classList.toggle('offline', !ok); $('span', el).textContent = ok ? 'Server đã kết nối' : 'Chưa kết nối server';
 }
-async function api(path, { method = 'GET', data } = {}) {
+async function api(path, { method = 'GET', data, timeoutMs = 20000 } = {}) {
   let response;
-  try { response = await fetch('/api' + path, { method, credentials: 'same-origin', headers: { ...(data ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && state.csrf ? { 'X-CSRF-Token': state.csrf } : {}) }, body: data ? JSON.stringify(data) : undefined, signal: AbortSignal.timeout(20000) }); }
+  try { response = await fetch('/api' + path, { method, credentials: 'same-origin', headers: { ...(data ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && state.csrf ? { 'X-CSRF-Token': state.csrf } : {}) }, body: data ? JSON.stringify(data) : undefined, signal: AbortSignal.timeout(timeoutMs) }); }
   catch { connection(false); const error = new Error('Chưa kết nối được server. Vui lòng kiểm tra mạng.'); error.network = true; throw error; }
   connection(true); const result = await response.json();
   if (!response.ok) {
@@ -145,16 +145,29 @@ async function account() {
   shortcutSettings();
   if (u.role === 'admin') await usersList();
 }
+function fileDataURL(file){return new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('Không đọc được file.'));reader.readAsDataURL(file);});}
 function mmImportSettings(target=$('.account-layout'),open=false){
   if(state.user?.role!=='admin')return;
   const panel=document.createElement('section');panel.className='panel';panel.id='mm-settings';
-  panel.innerHTML=`<details id="mm-settings-details"><summary>Cài đặt · Dữ liệu MM</summary><p class="muted">MM dùng chung cho Stock, tra cứu và CKD. Nhập CSV UTF-8 (tối đa 2 MB / 10.000 dòng). ITEM đã có sẽ được cập nhật; các ITEM khác được giữ lại.</p><p class="muted">Thêm cột qty và lot_no nếu có dữ liệu Stock. qty riêng với Selling Q’ty và MOQ; ô trống để chưa xác định. Nhãn có QTY / Lot No rõ ràng được ưu tiên khi quét. Lịch sử mới giữ thông tin tại thời điểm quét.</p>${button('Tải CSV mẫu','mm-template','small','download')}<form id="mm-import" class="mt"><div class="field"><label for="mm-file">File MM (.csv)</label><input id="mm-file" type="file" accept=".csv,text/csv" required></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">Nhập MM</button></form><p id="mm-import-status" class="muted" role="status"></p></details>`;
+  panel.innerHTML=`<details id="mm-settings-details"><summary>Cài đặt · Dữ liệu MM</summary><p class="muted">MM dùng chung cho Stock, tra cứu và CKD. Nhập Excel .xls / .xlsx (tối đa 32 MB, đọc tất cả sheet) hoặc CSV UTF-8 (2 MB). File Excel giữ từng barcode, lô, vị trí và QTY thập phân; barcode đã có được cập nhật, các dòng khác được giữ lại.</p><p class="muted">Thêm cột qty và lot_no nếu có dữ liệu Stock. qty riêng với Selling Q’ty và MOQ; ô trống để chưa xác định. Nhãn có QTY / Lot No rõ ràng được ưu tiên khi quét. Lịch sử mới giữ thông tin tại thời điểm quét.</p>${button('Tải CSV mẫu','mm-template','small','download')}<form id="mm-import" class="mt"><div class="field"><label for="mm-file">File MM (.xls, .xlsx, .csv)</label><input id="mm-file" type="file" accept=".xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">Nhập MM</button></form><div id="mm-import-status" class="muted" role="status"></div></details>`;
   target.append(panel);
   $('#mm-template',panel).onclick=()=>downloadText('work-area-mm-template.csv','\uFEFFitem_code,samsung,item,description,maker,vendor,location,selling_qty,moq,qty,lot_no\n');
   formAction('#mm-import',async(_,form)=>{
-    const file=$('#mm-file').files[0];if(!file||file.size>2_000_000)throw Error('Chọn CSV tối đa 2 MB.');
-    const result=await api('/materials/import',{method:'POST',data:{csv:await file.text()}});
-    form.reset();$('#mm-import-status',panel).textContent=`Đã nhập ${number(result.count)} vật tư vào MM dùng chung.`;toast('Đã cập nhật MM.');
+    const file=$('#mm-file').files[0];if(!file)throw Error('Chọn file MM.');
+    const csv=/\.csv$/i.test(file.name);if(file.size>(csv?2_000_000:32*1024*1024))throw Error(csv?'CSV tối đa 2 MB.':'Excel tối đa 32 MB.');
+    if(!/\.(xls|xlsx|csv)$/i.test(file.name))throw Error('Chọn file .xls, .xlsx hoặc .csv.');
+    $('#mm-import-status',panel).textContent=csv?'Đang nhập CSV…':'Đang tải và đọc tất cả sheet. Vui lòng giữ trang mở…';
+    const data=csv?{csv:await file.text()}:{file:await fileDataURL(file),name:file.name};
+    let result;try{result=await api('/materials/import',{method:'POST',data,timeoutMs:180000});}catch(e){$('#mm-import-status',panel).textContent='Chưa xác nhận được kết quả nhập.';throw e;}
+    form.reset();
+    $('#mm-import-status',panel).textContent=`Đã nhập ${number(result.count)} dòng MM.`;
+    if(result.sheets){
+      const list=document.createElement('ul');
+      for(const sheet of result.sheets){const li=document.createElement('li');li.textContent=`${sheet.name}: ${number(sheet.rows)} dòng dữ liệu${sheet.totalRows?' · '+sheet.totalRows+' dòng tổng không tính là vật tư':''}${sheet.empty?' · Sheet trống':''}`;list.append(li);}
+      $('#mm-import-status',panel).append(list);
+      const note=document.createElement('p');note.textContent=`Thêm mới ${number(result.inserted)} · Cập nhật ${number(result.updated)}. Đã đọc đủ ${result.sheets.length} sheet.`;$('#mm-import-status',panel).append(note);
+    }
+    toast('Đã cập nhật MM.');
   });
   if(open)$('#mm-settings-details',panel).open=true;
   if(!open&&location.hash.includes('mm-settings')){$('#mm-settings-details',panel).open=true;requestAnimationFrame(()=>panel.isConnected&&panel.scrollIntoView({block:'start'}));}
@@ -298,13 +311,13 @@ function startCamera() {
   phoneScanner.open();
 }
 function stopCamera() { phoneScanner?.close(); phoneScanner=null; }
-function fieldCamera(inputId,title,onRead) {
+function fieldCamera(inputId,title,onRead,{singleShot=false}={}) {
   const input=$('#'+inputId);if(!input)return;
   const button=document.createElement('button');button.type='button';button.className='button small field-camera-button';button.dataset.cameraFor=inputId;button.innerHTML=icon('camera')+' Quét camera';input.insertAdjacentElement('afterend',button);
   button.onclick=()=>{
     if(!state.user)return;stopCamera();
-    phoneScanner=new PhoneScanner($('#camera-dialog'),{title,accountKey:'u'+state.user.id,continuous:state.continuousScan,onContinuousChange:setContinuousScan,
-      onCode:async code=>{if(!input.isConnected)throw Error('Màn hình đã thay đổi. Hãy mở lại camera.');input.value=code;const result=await onRead?.(code,input);return {message:result||'Đã điền mã. Tiếp tục quét hoặc đóng camera để kiểm tra.'};},
+    phoneScanner=new PhoneScanner($('#camera-dialog'),{title,accountKey:'u'+state.user.id,continuous:singleShot?false:state.continuousScan,hideContinuous:singleShot,onContinuousChange:singleShot?undefined:setContinuousScan,
+      onCode:async code=>{if(!input.isConnected)throw Error('Màn hình đã thay đổi. Hãy mở lại camera.');input.value=code;const result=await onRead?.(code,input);if(singleShot)phoneScanner?.close();return {message:result||'Đã điền mã. Tiếp tục quét hoặc đóng camera để kiểm tra.'};},
       onManual:()=>input.isConnected&&input.focus(),onAuthExpired:()=>{stopCamera();location.hash='#account';}
     });phoneScanner.open();
   };
@@ -336,22 +349,24 @@ async function materials(id) {
     return;
   }
   const mmLookupField=view;
-  let request=0;
+  let request=0,loaded=[],next=null,lastQuery='';
   $('#main').innerHTML=`${pageTop(modes[view],'Tra cứu MM · '+modes[view],'','#mm','Tra cứu MM')}<section class="panel"><form id="mm-search"><div class="search-row"><input id="mm-q" name="q" placeholder="Nhập ${modes[view]} cần tìm" aria-label="Tìm theo ${modes[view]}" maxlength="200" autocomplete="off"><button class="button primary" type="submit">${icon('search')} Xem</button></div><p class="form-message" role="alert"></p></form><p class="muted mm-field-note">${view==='spec'?'Spec dùng cột mô tả (description / spec) trong file MM.':'Tra cứu theo '+modes[view]+'. Để trống rồi chọn Xem để xem danh sách.'}</p><div id="mm-results" aria-live="polite"></div></section>`;
-  const search=async q=>{
+  const search=async(q,more=false)=>{
     const field=mmLookupField,version=++request,el=$('#mm-results');
-    el.textContent='Đang tra cứu '+modes[field]+'…';
+    if(!more){loaded=[];next=null;lastQuery=q;el.textContent='Đang tra cứu '+modes[field]+'…';}
     try{
-      const result=await api('/materials?field='+field+'&q='+encodeURIComponent(q));
+      const result=await api('/materials?field='+field+'&q='+encodeURIComponent(q)+(more&&next!==null?'&offset='+next:''));
       if(id!==renderId||!el.isConnected||version!==request||field!==mmLookupField)return;
+      loaded=more?[...loaded,...result.materials]:result.materials;next=result.next;result.materials=loaded;
       const columns=[['location','Location'],['item_code','Item code / Samsung'],['spec','Spec'],['item','Item NM'],['maker','Maker / Vendor'],['qty','QTY Stock / Lot No'],['selling_qty','Selling Q’ty / MOQ']];
       const first=columns.findIndex(([key])=>key===field);columns.unshift(...columns.splice(first,1));
-      const cell=(m,key)=>key==='item_code'?`${escape(m.item_code)}<small>${escape(m.samsung)}</small>`:key==='spec'?escape(m.description)||'—':key==='maker'?`${escape(m.maker)||'—'}<small>${escape(m.vendor)}</small>`:key==='qty'?`${m.qty==null?'—':number(m.qty)}<small>${escape(m.lot_no)||'—'}</small>`:key==='selling_qty'?`${number(m.selling_qty)}<small>MOQ ${number(m.moq)}</small>`:escape(m[key])||'—';
+      const cell=(m,key)=>key==='item_code'?`${escape(m.item_code)}<small>${escape(m.samsung)}</small>${m.source_sheet?`<small>Sheet: ${escape(m.source_sheet)} · dòng ${m.source_row}</small>`:''}`:key==='spec'?escape(m.description)||'—':key==='maker'?`${escape(m.maker)||'—'}<small>${escape(m.vendor)}</small>`:key==='qty'?`${m.qty==null?'—':number(m.qty)}<small>${escape(m.lot_no)||'—'}</small>`:key==='selling_qty'?`${m.selling_qty==null?'—':number(m.selling_qty)}<small>MOQ ${m.moq==null?'—':number(m.moq)}</small>`:escape(m[key])||'—';
       el.innerHTML=`<p class="muted">${modes[field]} · ${number(result.materials.length)} / ${number(result.matched)} kết quả · ${number(result.total)} vật tư trong MM${result.matched>result.materials.length?' · Nhập từ khóa cụ thể hơn để thu hẹp.':''}</p>`+(result.materials.length?`<div class="table-wrap"><table><thead><tr>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${result.materials.map(m=>`<tr>${columns.map(([key])=>`<td class="wrap">${cell(m,key)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>`:empty('Chưa có kết quả',result.total?'Không có '+modes[field]+' phù hợp. Thử từ khóa khác.':state.user.role==='admin'?'Chọn Nhập file để thêm danh mục MM.':'Quản trị viên cần nhập danh mục MM.','search'));
+      if(next!==null){const moreButton=document.createElement('button');moreButton.className='button full mt';moreButton.id='mm-more';moreButton.textContent='Xem thêm';moreButton.onclick=()=>{moreButton.disabled=true;search(lastQuery,true).catch(e=>toast(e.message));};el.append(moreButton);}
     }catch(e){if(id===renderId&&el.isConnected&&version===request)el.innerHTML=empty('Chưa tải được MM',escape(e.message),'sync');throw e;}
   };
-  scanFlowBar($('.panel'));fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu theo '+modes[mmLookupField]+'.';});
-  formAction('#mm-search',async b=>{await search(b.q);if(state.continuousScan)$('#mm-q')?.select();});
+  fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu theo '+modes[mmLookupField]+'.';},{singleShot:true});
+  formAction('#mm-search',async b=>{await search(b.q);});
   try{await search('');}catch{}
 }
 

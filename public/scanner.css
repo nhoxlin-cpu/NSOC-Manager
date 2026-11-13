@@ -36,3 +36,5 @@
 .scanner-continuous{width:36px;height:36px;padding:7px;border-radius:10px;justify-content:center}.scanner-continuous svg{width:21px;height:21px}
 
 .scanner-stock-info{display:grid;grid-template-columns:90px minmax(0,1fr);gap:5px 10px;margin:10px 0 0;font-size:11px;line-height:1.4}.scanner-stock-info[hidden]{display:none}.scanner-stock-info dt{color:#9ab0c5}.scanner-stock-info dd{margin:0;overflow-wrap:anywhere}.phone-scanner[data-state=success] .scanner-result{background:#114c38;border-color:#3be596;color:#d1ffe8}.phone-scanner[data-state=success] .scanner-frame{border-color:#3be596}
+
+.scanner-continuous[hidden]{display:none}
