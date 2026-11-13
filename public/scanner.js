@@ -1,5 +1,6 @@
 import { fitScanRect,resizeScanRect,enhanceGlare } from '/scanner-tools.js?v=20261113-2';
 const symbols = {
+  continuous:'<path d="M20 7a9 9 0 0 0-15-3L2 7m0-5v5h5M4 17a9 9 0 0 0 15 3l3-3m0 5v-5h-5"/>',
   back:'<path d="M19 12H5m6-6-6 6 6 6"/>',
   flash:'<path d="m13 2-9 12h7l-1 8L21 9h-8Z"/>',
   sound:'<path d="M11 4 5 9H2v6h3l6 5ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
@@ -14,7 +15,7 @@ const clean = value => String(value ?? '').trim().toUpperCase();
 const pref = (key, fallback) => { try { return localStorage.getItem('wa-scanner-' + key) ?? fallback; } catch { return fallback; } };
 const remember = (key, value) => { try { localStorage.setItem('wa-scanner-' + key, String(value)); } catch {} };
 let vendorPromise;
-function zxing() {
+export function zxing() {
   if (window.ZXing) return Promise.resolve(window.ZXing);
   if (!vendorPromise) vendorPromise = new Promise((resolve, reject) => {
     const script=document.createElement('script'); script.src='/vendor/zxing-0.21.3.min.js';
@@ -32,10 +33,11 @@ export class PhoneScanner {
     this.continuous=options.continuous!==false;this.singlePaused=false;this.captured=0;
     this.format=pref('format','barcode') === 'qr' ? 'qr' : 'barcode'; this.sound=pref('sound','true') === 'true'; this.vibration=pref('vibration','true') === 'true';
     this.canvas=document.createElement('canvas'); this.context=this.canvas.getContext('2d',{willReadFrequently:true});
+    this.evidenceCanvas=document.createElement('canvas');
     dialog.className='phone-scanner'; dialog.setAttribute('aria-label','Quét mã bằng điện thoại');
     dialog.innerHTML=`<video class="scanner-video" autoplay playsinline muted></video><div class="scanner-shade"></div>
       <div class="scanner-layout"><section class="scanner-top" aria-label="Kết quả quét">
-        <div class="scanner-heading"><div><span class="scanner-eyebrow">WORK AREA · QUÉT LIÊN TỤC</span><h2 id="scanner-title"></h2></div><button id="scanner-continuous" class="scanner-continuous" aria-pressed="true">Liên tục <strong>Bật</strong></button></div>
+        <div class="scanner-heading"><div><span class="scanner-eyebrow">WORK AREA · QUÉT LIÊN TỤC</span><h2 id="scanner-title"></h2></div><button id="scanner-continuous" class="scanner-continuous" aria-pressed="true">${svg('continuous')}</button></div>
         <p class="scanner-status" id="scanner-status" aria-live="polite">Đang mở camera…</p>
         <div class="scanner-result" id="scanner-result"><span id="scanner-value">Đưa mã vào khung</span><span id="scanner-result-icon"></span></div>
         <p class="scanner-count" id="scanner-count">Đã lưu 0 lượt trong lần mở camera này</p>
@@ -79,7 +81,7 @@ export class PhoneScanner {
     if (typeof navigator.vibrate !== 'function') { this.$('#scanner-vibration').disabled=true; this.$('#scanner-vibration').title='Trình duyệt không hỗ trợ rung'; }
   }
   flowUI() {
-    const button=this.$('#scanner-continuous');button.setAttribute('aria-pressed',String(this.continuous));button.setAttribute('aria-label','Quét liên tục: '+(this.continuous?'Bật':'Tắt'));button.classList.toggle('enabled',this.continuous);button.querySelector('strong').textContent=this.continuous?'Bật':'Tắt';
+    const button=this.$('#scanner-continuous');button.setAttribute('aria-pressed',String(this.continuous));button.setAttribute('aria-label','Quét liên tục: '+(this.continuous?'Bật':'Tắt'));button.classList.toggle('enabled',this.continuous);button.title='Quét liên tục: '+(this.continuous?'Bật':'Tắt');
     this.$('.scanner-eyebrow').textContent='WORK AREA · '+(this.continuous?'QUÉT LIÊN TỤC':'QUÉT TỪNG MÃ');this.$('#scanner-next').hidden=!this.singlePaused;
     this.dialog.dataset.scanFlow=this.singlePaused?'paused':this.continuous?'continuous':'single';
   }
@@ -143,6 +145,11 @@ export class PhoneScanner {
     const ratio=Math.min(1,960/w); const width=Math.max(1,Math.round(w*ratio)),height=Math.max(1,Math.round(h*ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width=width; this.canvas.height=height; }
     this.context.drawImage(this.video,x,y,w,h,0,0,width,height);
+    if(this.options.autoCapture && !this.options.onCode){
+      const scale=Math.min(1,1280/Math.max(this.video.videoWidth,this.video.videoHeight));
+      this.evidenceCanvas.width=Math.round(this.video.videoWidth*scale);this.evidenceCanvas.height=Math.round(this.video.videoHeight*scale);
+      this.evidenceCanvas.getContext('2d').drawImage(this.video,0,0,this.evidenceCanvas.width,this.evidenceCanvas.height);
+    }
     if(this.glare && (++this.framePass%4)!==0) {const image=this.context.getImageData(0,0,width,height);enhanceGlare(image,{invert:this.framePass%4===3});this.context.putImageData(image,0,0);}
     return true;
   }
@@ -159,16 +166,26 @@ export class PhoneScanner {
       if (value && value.length<=500) {
         if (value === this.candidate && Date.now()-(this.candidateTime||0)<1800) this.hits++; else { this.candidate=value; this.hits=1; }
         this.candidateTime=Date.now();
-        if (this.hits>=2 && value !== this.latched) { this.latched=value; await this.accept(value); }
+        if (this.hits>=2 && value !== this.latched) {
+          this.latched=value;
+          const image=this.options.autoCapture&&!this.options.onCode?this.evidenceCanvas.toDataURL('image/jpeg',.8):null;
+          await this.accept(value,false,image);
+        }
       } else if(Date.now()-(this.candidateTime||0)>1800) { this.candidate=''; this.hits=0; }
     }
     if (this.active && epoch === this.epoch) this.timer=setTimeout(()=>this.loop(epoch),this.reader ? 300 : 180);
   }
-  async accept(code,force=false) {
+  async accept(code,force=false,image=null) {
     if (this.busy || !this.active) return;
+    if(code!==this.lastCode)this.lastImage=null;
+    if(image)this.lastImage=image;
     this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
     const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:!force};
     try {
+      if(this.options.autoCapture && !this.options.onCode){
+        if(!this.lastImage)throw Error('Chưa chụp được ảnh đối chiếu. Hãy đưa mã vào khung và quét lại.');
+        payload.image=this.lastImage;
+      }
       if(this.options.onCode){const result=await this.options.onCode(code);this.captured++;this.paint('success',result?.message||'Đã điền mã vào mục đã chọn',code);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(false);return;}
       let known=0, online=true;
       const local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && clean(r.barcode) === code).length;
