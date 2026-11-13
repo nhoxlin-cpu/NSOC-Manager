@@ -62,27 +62,33 @@ export async function renderCkd(ctx){
     if(version!==checkEpoch||!$('#ckd-pair-form'))return;
     current={data,requestId};$('#ckd-samsung').value=data.samsung;$('#ckd-item').value=data.item_code;steps();
     const pencil='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5"/></svg>';
-    const code=(slot,label,value)=>`<div class="ckd-result-code"><span>${label}</span><strong>${e(value)}</strong><button type="button" class="ckd-edit-qty" data-edit-code="${slot}" aria-label="Sửa ${label}">${pencil}</button><input id="ckd-result-${slot}" class="ckd-inline-code" aria-label="${label}" value="${e(value)}" maxlength="500" hidden></div>`;
+    const code=(slot,label,value)=>`<div class="ckd-result-code"><span>${label}</span><strong id="ckd-result-${slot}" role="textbox" aria-label="${label}" aria-readonly="true" contenteditable="false" tabindex="-1">${e(value)}</strong><button type="button" class="ckd-edit-qty" data-edit-code="${slot}" aria-label="Sửa ${label}">${pencil}</button></div>`;
     detail('Bảng check CKD',`<div class="result-banner ${r.pass?'':'fail'}" title="${e(r.reason)}">${r.pass?'PASS · Hai mã khớp':'NG · Cần kiểm tra'}</div><div class="result-info">${code('samsung','Samsung',r.raw_samsung||r.samsung)}${code('item','ITEM',r.item_code)}</div><dl class="detail-list ckd-details">${[['Item',r.model?.item||'—'],['Description',r.model?.description||'—'],['SO Maker',r.order?.so_maker||'—'],['Maker bán',r.selling_maker||'MM trống'],['Vendor',r.selling_vendor||r.order?.vendor||'—'],['Type',r.order?.type||'—'],['Selling Q’ty',n(r.target)],['MOQ',r.qty?n(r.qty):'—'],['Đã xác nhận',n(r.boxes)+' box · '+n(r.total)],['Sau box này',n(r.pass?r.after:r.total)]].map(([k,v])=>`<dt>${k}</dt><dd>${k==='Maker bán'?`<span id="ckd-selling-maker" class="badge ${r.maker_match?'green':'red'}">${e(v)}</span>`:k==='MOQ'?`<span id="ckd-qty-value">${e(v)}</span><button type="button" id="ckd-edit-qty" class="ckd-edit-qty" aria-label="Sửa MOQ">${pencil}</button><input type="number" id="ckd-qty" aria-label="MOQ" value="${r.qty||''}" min="1" max="1000000000" step="1" inputmode="numeric" hidden>`:e(v)}</dd>`).join('')}</dl><div class="notice ${r.over?'error':'warning'}">${r.pass?(r.over?'VƯỢT '+n(r.after-r.target)+' so với Selling Qty.':r.after===r.target?'Đủ số lượng cần bán.':'Còn '+n(Math.max(0,r.target-r.after))+' sau box này.'):'NG không cộng số lượng SO.'}</div><p id="ckd-calculating" class="muted" role="status"></p><p id="ckd-save-error" class="form-message" role="alert">${r.needs_qty?'Nhập số lượng box.':''}</p><div class="actions equal mt"><button class="button" id="ckd-skip">Không lưu</button><button class="button ${r.pass?'primary':'danger'}" id="ckd-save" ${canWrite()&&(!r.pass||r.qty)?'':'disabled'}>${r.pass?'Xác nhận lưu box':'Lưu NG'}</button></div>`);
     let qtyOverrideState=edit.qtyOverride;const open=new Set(edit.open||[]);if(r.needs_qty)open.add('qty');
-    function reveal(slot,focus=true){const input=$('#'+(slot==='qty'?'ckd-qty':'ckd-result-'+slot));if(focus&&open.has(slot)){open.delete(slot);input.hidden=true;return;}open.add(slot);input.hidden=false;if(focus){input.focus();input.select();}}
+    function reveal(slot,focus=true){
+      const input=$('#'+(slot==='qty'?'ckd-qty':'ckd-result-'+slot)),close=focus&&open.has(slot);
+      if(close)open.delete(slot);else open.add(slot);
+      if(slot==='qty'){input.hidden=close;if(!close&&focus){input.focus();input.select();}return;}
+      input.contentEditable=close?'false':'plaintext-only';input.setAttribute('aria-readonly',String(close));input.classList.toggle('editing',!close);
+      if(!close&&focus){input.focus({preventScroll:true});const range=document.createRange();range.selectNodeContents(input);const selection=window.getSelection();selection.removeAllRanges();selection.addRange(range);}
+    }
     for(const slot of open)reveal(slot,false);
     $('#ckd-edit-qty').onclick=()=>reveal('qty');document.querySelectorAll('[data-edit-code]').forEach(b=>b.onclick=()=>reveal(b.dataset.editCode));
     function calculate(id,immediate=false){
       clearTimeout(checkTimer);checkEpoch++;$('#ckd-save').disabled=true;
       if(id==='ckd-qty')qtyOverrideState=true;const quantity=$('#ckd-qty').value,override=qtyOverrideState;
-      const nextData={...data,samsung:$('#ckd-result-samsung').value,item_code:$('#ckd-result-item').value};if(override)nextData.qty=quantity;else delete nextData.qty;
+      const nextData={...data,samsung:$('#ckd-result-samsung').textContent,item_code:$('#ckd-result-item').textContent};if(override)nextData.qty=quantity;else delete nextData.qty;
       if(override&&(!quantity||!Number.isSafeInteger(Number(quantity))||Number(quantity)<=0)){ $('#ckd-calculating').textContent='Nhập số lượng lớn hơn 0.';return; }
       $('#ckd-calculating').textContent='Đang tính…';
       checkTimer=setTimeout(async()=>{
-        const active=document.activeElement,focus=active?.id,selection=active?.selectionStart,scroll=$('#detail-dialog').scrollTop;
+        const active=document.activeElement,focus=active?.id,selection=active?.isContentEditable?window.getSelection()?.focusOffset:active?.selectionStart,scroll=$('#detail-dialog').scrollTop;
         try{await showCheck(nextData,requestId,evidence,{open:[...open],qtyOverride:override,focus,selection,scroll});}
         catch(err){if($('#ckd-save-error')){$('#ckd-save-error').textContent=err.message;$('#ckd-calculating').textContent='';}}
       },immediate?0:350);
     }
     for(const id of ['ckd-qty','ckd-result-samsung','ckd-result-item']){$('#'+id).oninput=()=>calculate(id);$('#'+id).onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();calculate(id,true);}};}
     $('#detail-dialog').scrollTop=edit.scroll||0;
-    if(edit.focus){const input=$('#'+edit.focus);if(input){input.focus({preventScroll:true});try{if(edit.selection!==null&&edit.selection!==undefined)input.setSelectionRange(edit.selection,edit.selection);}catch{}}}
+    if(edit.focus){const input=$('#'+edit.focus);if(input){input.focus({preventScroll:true});try{if(edit.selection!==null&&edit.selection!==undefined){if(input.isContentEditable){const range=document.createRange();range.setStart(input.firstChild||input,Math.min(edit.selection,input.textContent.length));range.collapse(true);const selected=window.getSelection();selected.removeAllRanges();selected.addRange(range);}else input.setSelectionRange(edit.selection,edit.selection);}}catch{}}}
     $('#detail-dialog').onclose=()=>{checkEpoch++;clearTimeout(checkTimer);};
     async function next(){reset();await loadHistory();if(autoCamera&&state.continuousScan&&$('#ckd-pair-form'))startCamera();}
     $('#ckd-skip').onclick=()=>{$('#detail-dialog').close();next().catch(err=>toast(err.message));};
