@@ -30,16 +30,17 @@ export class PhoneScanner {
   constructor(dialog, options) {
     this.dialog=dialog; this.options=options; this.epoch=0; this.saved=0; this.queued=0; this.seen=new Map(); this.alerts=[];
     this.pointers=new Map();this.digitalZoom=1;this.opticalZoom=1;this.videoPan={x:0,y:0};this.glare=false;this.framePass=0;
+    this.continuous=options.continuous!==false;this.singlePaused=false;this.captured=0;
     this.format=pref('format','barcode') === 'qr' ? 'qr' : 'barcode'; this.sound=pref('sound','true') === 'true'; this.vibration=pref('vibration','true') === 'true';
     this.canvas=document.createElement('canvas'); this.context=this.canvas.getContext('2d',{willReadFrequently:true});
     dialog.className='phone-scanner'; dialog.setAttribute('aria-label','Quét mã bằng điện thoại');
     dialog.innerHTML=`<video class="scanner-video" autoplay playsinline muted></video><div class="scanner-shade"></div>
       <div class="scanner-layout"><section class="scanner-top" aria-label="Kết quả quét">
-        <div class="scanner-heading"><div><span class="scanner-eyebrow">WORK AREA · QUÉT LIÊN TỤC</span><h2 id="scanner-title"></h2></div><span class="scanner-live"><i></i> Camera</span></div>
+        <div class="scanner-heading"><div><span class="scanner-eyebrow">WORK AREA · QUÉT LIÊN TỤC</span><h2 id="scanner-title"></h2></div><button id="scanner-continuous" class="scanner-continuous" aria-pressed="true">Liên tục <strong>Bật</strong></button></div>
         <p class="scanner-status" id="scanner-status" aria-live="polite">Đang mở camera…</p>
         <div class="scanner-result" id="scanner-result"><span id="scanner-value">Đưa mã vào khung</span><span id="scanner-result-icon"></span></div>
         <p class="scanner-count" id="scanner-count">Đã lưu 0 lượt trong lần mở camera này</p>
-        <button class="scanner-repeat" id="scanner-repeat" disabled>Quét lại cùng mã</button>
+        <div class="scanner-result-actions"><button class="scanner-repeat" id="scanner-repeat" disabled>Quét lại cùng mã</button><button class="scanner-next" id="scanner-next" hidden>Quét mã tiếp theo</button></div>
         <div class="scanner-alerts" id="scanner-alerts" aria-live="polite"></div>
       </section><div class="scanner-body"><div class="scanner-frame" id="scanner-frame" tabindex="0" role="group" aria-label="Vùng quét: kéo để di chuyển, kéo góc để đổi kích thước. Phím mũi tên để di chuyển, cộng trừ để đổi cỡ.">${['tl','tr','bl','br'].map(corner=>`<button type="button" class="scanner-corner ${corner}" data-resize="${corner}" aria-label="Kéo góc ${corner} để thay đổi kích thước vùng quét"></button>`).join('')}<div class="scanner-laser"></div><span class="scanner-frame-label" id="scanner-frame-label">Đặt barcode vào trong khung</span></div></div>
       <section class="scanner-controls" aria-label="Điều khiển camera"><div class="scanner-formats" role="tablist" aria-label="Định dạng mã"><button id="scanner-barcode" role="tab">${svg('barcode')} Barcode</button><button id="scanner-qr" role="tab">${svg('qr')} QR</button></div>
@@ -50,6 +51,8 @@ export class PhoneScanner {
     this.$('#scanner-back').onclick=() => this.close();
     this.$('#scanner-manual').onclick=() => { this.close(); options.onManual?.(); };
     this.$('#scanner-repeat').onclick=() => this.lastCode && this.accept(this.lastCode,true);
+    this.$('#scanner-continuous').onclick=()=>this.setContinuous(!this.continuous);
+    this.$('#scanner-next').onclick=()=>this.resumeSingle();
     this.$('#scanner-barcode').onclick=() => this.changeFormat('barcode'); this.$('#scanner-qr').onclick=() => this.changeFormat('qr');
     this.$('#scanner-sound').onclick=() => { this.sound=!this.sound; remember('sound',this.sound); this.settings(); if (this.sound) this.feedback(false); };
     this.$('#scanner-vibration').onclick=() => { this.vibration=!this.vibration; remember('vibration',this.vibration); this.settings(); if (this.vibration) navigator.vibrate?.(40); };
@@ -58,7 +61,7 @@ export class PhoneScanner {
     this.$('#scanner-glare').onclick=()=>this.setGlare(!this.glare);this.$('#scanner-reset-view').onclick=()=>this.resetView();
     this.installGestures();
     this.onClose=() => this.release(); dialog.addEventListener('close',this.onClose);
-    this.settings(); this.formatUI();
+    this.settings(); this.formatUI();this.flowUI();
   }
   async open() {
     this.active=true; const epoch=++this.epoch; this.dialog.showModal(); document.body.classList.add('scanner-open');
@@ -67,7 +70,7 @@ export class PhoneScanner {
     try {
       await Promise.all([this.startVideo(),this.prepareDecoder()]);
       if (!this.active || epoch !== this.epoch) return;
-      this.paint('ready','Sẵn sàng · Mã mới được tự động lưu'); this.loop(epoch);
+      this.paint('ready',this.options.onCode?'Sẵn sàng · Đọc mã để điền vào mục đã chọn':this.continuous?'Sẵn sàng · Mã mới được tự động lưu':'Quét từng mã · Tự dừng sau một kết quả'); this.loop(epoch);
     } catch(e) { if (this.active && epoch === this.epoch) { this.epoch++; this.releaseStream(); this.paint('error',e.name === 'NotAllowedError' ? 'Chưa được cấp quyền camera. Hãy cho phép camera trong trình duyệt.' : e.name === 'NotFoundError' ? 'Không tìm thấy camera. Bạn có thể nhập mã bằng tay.' : e.message); } }
   }
   settings() {
@@ -75,6 +78,19 @@ export class PhoneScanner {
       const b=this.$('#scanner-' + name); b.classList.toggle('enabled',on); b.setAttribute('aria-pressed',String(on));
     }
     if (typeof navigator.vibrate !== 'function') { this.$('#scanner-vibration').disabled=true; this.$('#scanner-vibration').title='Trình duyệt không hỗ trợ rung'; }
+  }
+  flowUI() {
+    const button=this.$('#scanner-continuous');button.setAttribute('aria-pressed',String(this.continuous));button.setAttribute('aria-label','Quét liên tục: '+(this.continuous?'Bật':'Tắt'));button.classList.toggle('enabled',this.continuous);button.querySelector('strong').textContent=this.continuous?'Bật':'Tắt';
+    this.$('.scanner-eyebrow').textContent='WORK AREA · '+(this.continuous?'QUÉT LIÊN TỤC':'QUÉT TỪNG MÃ');this.$('#scanner-next').hidden=!this.singlePaused;
+    this.dialog.dataset.scanFlow=this.singlePaused?'paused':this.continuous?'continuous':'single';
+  }
+  setContinuous(on,notify=true) {
+    this.continuous=on;
+    if(on)this.singlePaused=false;else if(this.lastCode&&!this.busy)this.singlePaused=true;
+    this.flowUI();if(notify)this.options.onContinuousChange?.(on);
+  }
+  resumeSingle() {
+    this.singlePaused=false;this.latched='';this.candidate='';this.hits=0;this.candidateTime=0;this.flowUI();this.paint('ready','Sẵn sàng quét mã tiếp theo',this.lastCode);
   }
   formatUI() {
     this.dialog.dataset.format=this.format;
@@ -135,7 +151,7 @@ export class PhoneScanner {
   }
   async loop(epoch) {
     if (!this.active || epoch !== this.epoch) return;
-    if (!this.busy && !this.changing && !this.zoomApplying && !this.gesture && this.capture()) {
+    if (!this.busy && !this.singlePaused && !this.changing && !this.zoomApplying && !this.gesture && this.capture()) {
       let value='';
       try {
         if (this.detector) value=(await this.detector.detect(this.canvas))[0]?.rawValue || '';
@@ -153,9 +169,10 @@ export class PhoneScanner {
   }
   async accept(code,force=false) {
     if (this.busy || !this.active) return;
-    this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking','Đang kiểm tra trùng trên toàn server…',code);
+    this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
     const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:!force};
     try {
+      if(this.options.onCode){const result=await this.options.onCode(code);this.captured++;this.paint('success',result?.message||'Đã điền mã vào mục đã chọn',code);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(false);return;}
       let known=0, online=true;
       const local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && clean(r.barcode) === code).length;
       try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
@@ -176,7 +193,7 @@ export class PhoneScanner {
       }
       this.repeatIsDuplicate=false; this.$('#scanner-repeat').textContent='Quét lại cùng mã'; this.options.onChanged?.();
     } catch(e) { this.paint('error',e.message,code); this.$('#scanner-repeat').textContent='Thử lưu lại mã'; if (e.status === 401) this.options.onAuthExpired?.(); }
-    finally { this.busy=false; if (this.active) this.$('#scanner-repeat').disabled=!this.lastCode; this.counts(); }
+    finally { this.busy=false; if (this.active) {this.$('#scanner-repeat').disabled=!this.lastCode;this.singlePaused=!this.continuous;this.flowUI();} this.counts(); }
   }
   duplicate(code,serverCount,localCount,online) {
     this.repeatIsDuplicate=true;
@@ -194,7 +211,7 @@ export class PhoneScanner {
     this.$('#scanner-result-icon').innerHTML=kind === 'success' ? svg('check') : '';
     this.counts();
   }
-  counts() { if (this.active) this.$('#scanner-count').textContent=`Đã lưu ${this.saved} lượt trong lần mở camera này${this.queued ? ` · ${this.queued} chờ đồng bộ` : ''}`; }
+  counts() { if (this.active) this.$('#scanner-count').textContent=this.options.onCode?`Đã đọc ${this.captured} mã trong lần mở camera này${this.singlePaused?' · Đang tạm dừng':''}`:`Đã lưu ${this.saved} lượt trong lần mở camera này${this.queued ? ` · ${this.queued} chờ đồng bộ` : ''}${this.singlePaused?' · Đang tạm dừng':''}`; }
   feedback(duplicate) {
     if (this.vibration) { try { navigator.vibrate?.(duplicate ? [70,50,70] : 45); } catch {} }
     if (!this.sound || !this.audio || this.audio.state === 'closed') return;

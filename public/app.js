@@ -1,4 +1,4 @@
-import { PhoneScanner } from '/scanner.js?v=20261113-2';
+import { PhoneScanner } from '/scanner.js?v=20261113-3';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -28,7 +28,7 @@ const roleName = role => ({ admin: 'Quản trị viên', inspector: 'Nhân viên
 const number = n => Number(n).toLocaleString('en-US');
 const time = value => new Date(value.replace(' ', 'T') + 'Z').toLocaleString('vi-VN', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' });
 const defaultNavigation=['home','scan','assistant','account'];
-const state = { user: null, csrf: null, needsSetup: false, page: '', mode: 'Label', image: null, imageName: '', connected: false, scans: [], next: null,navigation:[...defaultNavigation] };
+const state = { user: null, csrf: null, needsSetup: false, page: '', mode: 'Label', image: null, imageName: '', connected: false, scans: [], next: null,navigation:[...defaultNavigation],continuousScan:true };
 let toastTimer, phoneScanner, renderId = 0;
 function toast(message) { const el = $('#toast'); el.textContent = message; el.hidden = false; clearTimeout(toastTimer); toastTimer = setTimeout(() => { el.hidden = true; }, 5500); }
 function connection(ok) {
@@ -51,8 +51,21 @@ async function session() {
   await loadPreferences(); renderNavigation();
 }
 async function loadPreferences() {
-  state.navigation=[...defaultNavigation];
-  if (state.user) try {const result=await api('/preferences');state.navigation=result.navigation;} catch(e) {if(!e.network && e.status!==401) toast(e.message);}
+  state.navigation=[...defaultNavigation];state.continuousScan=true;
+  if (state.user) try {const result=await api('/preferences');state.navigation=result.navigation;state.continuousScan=result.continuous_scan!==false;} catch(e) {if(!e.network && e.status!==401) toast(e.message);}
+}
+function updateContinuousUI() {
+  document.querySelectorAll('[data-continuous-toggle]').forEach(button=>{button.setAttribute('aria-pressed',String(state.continuousScan));button.classList.toggle('enabled',state.continuousScan);button.textContent='Quét liên tục: '+(state.continuousScan?'Bật':'Tắt');});
+  if(phoneScanner&&phoneScanner.continuous!==state.continuousScan)phoneScanner.setContinuous(state.continuousScan,false);
+  const form=$('#scan-form');if(state.continuousScan&&form?.dataset.singleProcessed==='true'){delete form.dataset.singleProcessed;form.reset();$('#manual-next').hidden=true;$('button[type="submit"]',form).disabled=!canWrite();}
+}
+async function setContinuousScan(on) {
+  state.continuousScan=on;updateContinuousUI();
+  try{await api('/preferences',{method:'POST',data:{continuous_scan:on}});}catch(e){toast(e.network?'Đã áp dụng chế độ quét trên màn hình này; chưa lưu lên tài khoản vì mất kết nối.':e.message);}
+}
+function scanFlowBar(target) {
+  const row=document.createElement('div');row.className='scan-flow-bar';row.innerHTML='<span>Camera & máy quét</span><button type="button" data-continuous-toggle></button>';
+  target.prepend(row);row.querySelector('button').onclick=()=>setContinuousScan(!state.continuousScan);updateContinuousUI();
 }
 function button(text, id, style = '', symbol = '') { return `<button class="button ${style}" ${id ? `id="${id}"` : ''}>${symbol ? icon(symbol) : ''}${text}</button>`; }
 function field(label, name, options = {}) {
@@ -72,7 +85,7 @@ function formAction(selector, handler) {
     if (submit) submit.disabled = true; if (message) message.textContent = '';
     try { await handler(values(form), form); }
     catch (e) { if (message) message.textContent = e.message; else toast(e.message); }
-    finally { if (submit) submit.disabled = false; }
+    finally { if (submit) submit.disabled = form.dataset.singleProcessed==='true'; }
   });
 }
 
@@ -157,15 +170,20 @@ async function scan() {
   $('#main').innerHTML = `${pageTop('Quét & thu thập dữ liệu', 'Barcode · Ảnh label · Excel')}<div class="columns wide-left"><div><section class="panel">${readOnlyNote()}<div class="tabs" role="tablist" aria-label="Loại quét">${['HS','Stock','Label'].map(mode => `<button class="tab ${mode === state.mode ? 'active' : ''}" role="tab" aria-selected="${mode === state.mode}" data-mode="${mode}">Scan ${mode}</button>`).join('')}</div><div class="capture-actions">${button('Quét camera','scan-camera','primary','scan')}<button class="button image-upload" id="choose-photo" aria-label="Chụp hoặc chọn ảnh label">${icon('camera')}</button><input id="photo-input" class="file-input" type="file" accept="image/jpeg,image/png,image/webp" capture="environment"></div><div id="photo-area"></div><hr class="divider"><form id="scan-form">${field('BARCODE','barcode',{placeholder:'Nhập barcode hoặc dùng máy scan',extra:'maxlength="500" autocapitalize="none" spellcheck="false"'})}<p class="form-message" role="alert"></p><button class="button full" type="submit" ${canWrite() ? '' : 'disabled'}>${icon('plus')} Thêm barcode</button></form><p class="scan-caption">${icon('shield')} Lưu dùng chung trên server. Khi mất mạng, lượt quét được giữ trên thiết bị và chờ bạn đồng bộ.</p><details><summary>Thông tin máy scan</summary><p>Máy quét USB hoặc Bluetooth: đặt con trỏ vào ô Barcode rồi quét. Nếu máy gửi phím Enter, lượt quét sẽ được lưu ngay.</p><p>Camera cần HTTPS và quyền truy cập camera. Chọn Barcode hoặc QR để quét liên tục; mã trùng sẽ được cảnh báo trước khi lưu thêm. Ảnh label đính kèm riêng, chưa có OCR.</p></details></section><section class="panel"><div class="table-tools"><h2>Đồng bộ thiết bị</h2>${button('Đồng bộ','sync-queue','','sync')}</div><p class="muted">Dùng chung toàn server · <strong id="pending-count">0</strong> lượt quét chờ đồng bộ</p><div id="pending-list"></div></section></div><section class="panel"><div class="table-tools"><h2>Lịch sử quét</h2><div class="actions">${button('Tải lại','reload-scans','small','sync')}<a class="button primary small" href="/api/export?kind=scans">${icon('download')} Xuất Excel</a></div></div><p class="muted" id="scan-total">Đang tải lượt quét…</p><div id="scan-list"></div><div class="actions mt">${button('Xem thêm','more-scans','small')}</div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p></section></div>`;
   document.querySelectorAll('[data-mode]').forEach(el => el.onclick = () => { state.mode = el.dataset.mode; document.querySelectorAll('[data-mode]').forEach(b => { b.classList.toggle('active', b === el); b.setAttribute('aria-selected', String(b === el)); }); });
   $('.capture-actions').insertAdjacentHTML('beforebegin',field('Tên phiên quét (tùy chọn)','scan-session-title',{placeholder:'VD: Sub heatsink',required:false,extra:'maxlength="80"'}));
+  scanFlowBar($('.columns .panel'));
+  $('#scan-form').insertAdjacentHTML('beforeend','<button class="button soft full mt" type="button" id="manual-next" hidden>Quét mã tiếp theo</button>');
+  $('#manual-next').onclick=()=>{const form=$('#scan-form');delete form.dataset.singleProcessed;form.reset();$('#manual-next').hidden=true;$('button[type="submit"]',form).disabled=!canWrite();$('#barcode').focus();};
   $('#scan-camera').onclick = startCamera;
   $('#choose-photo').onclick = () => $('#photo-input').click();
   $('#photo-input').onchange = async e => { try { const file = e.target.files[0]; if (!file) return; if (!['image/jpeg','image/png','image/webp'].includes(file.type)) throw Error('Chọn ảnh JPEG, PNG hoặc WebP.'); if (file.size > 3 * 1024 * 1024) throw Error('Ảnh tối đa 3 MB. Hãy chọn ảnh nhỏ hơn.'); state.image = await readDataURL(file); state.imageName = file.name; photoPreview(); } catch(e) { toast(e.message); } };
   photoPreview();
   formAction('#scan-form', async (b, form) => {
+    if(form.dataset.singleProcessed==='true'){toast('Nhấn Quét mã tiếp theo để đọc thêm mã.');return;}
     const payload = { request_id: crypto.randomUUID(), barcode: b.barcode, mode:state.mode, image:state.image };
     try { await api('/scans', { method:'POST', data:payload }); toast('Đã lưu lượt quét trên server.'); }
     catch(e) { if (!e.network) throw e; await queue('put', { ...payload, owner:state.user.id, username:state.user.username }); toast('Mất kết nối. Đã giữ lượt quét trên thiết bị, chờ đồng bộ.'); }
-    form.reset(); state.image = null; state.imageName = ''; photoPreview(); await Promise.allSettled([loadScans(), showPending()]); $('#barcode')?.focus();
+    if(state.continuousScan){form.reset();$('#barcode')?.focus();}else{form.dataset.singleProcessed='true';$('#manual-next').hidden=false;}
+    state.image = null; state.imageName = ''; photoPreview(); await Promise.allSettled([loadScans(), showPending()]);
   });
   $('#reload-scans').onclick = () => loadScans(); $('#more-scans').onclick = () => loadScans(true);
   $('#sync-queue').onclick = async e => {
@@ -205,7 +223,7 @@ function startCamera() {
   if (!canWrite()) { toast('Cần quyền ghi dữ liệu để sử dụng quét camera.'); return; }
   stopCamera(); const owner=state.user.id, username=state.user.username;
   phoneScanner=new PhoneScanner($('#camera-dialog'),{
-    mode:state.mode,title:$('#scan-session-title')?.value.trim() || `Scan ${state.mode}`,accountKey:'u'+owner,api,pending:pendingRows,
+    mode:state.mode,title:$('#scan-session-title')?.value.trim() || `Scan ${state.mode}`,accountKey:'u'+owner,continuous:state.continuousScan,onContinuousChange:setContinuousScan,api,pending:pendingRows,
     enqueue:row=>queue('put',{...row,owner,username}),
     onChanged:()=>{if (state.page === 'scan') Promise.allSettled([loadScans(),showPending()]);},
     onManual:()=>$('#barcode')?.focus(),onAuthExpired:()=>{stopCamera();location.hash='#account';}
@@ -213,6 +231,25 @@ function startCamera() {
   phoneScanner.open();
 }
 function stopCamera() { phoneScanner?.close(); phoneScanner=null; }
+function fieldCamera(inputId,title,onRead) {
+  const input=$('#'+inputId);if(!input)return;
+  const button=document.createElement('button');button.type='button';button.className='button small field-camera-button';button.dataset.cameraFor=inputId;button.innerHTML=icon('camera')+' Quét camera';input.insertAdjacentElement('afterend',button);
+  button.onclick=()=>{
+    if(!state.user)return;stopCamera();
+    phoneScanner=new PhoneScanner($('#camera-dialog'),{title,accountKey:'u'+state.user.id,continuous:state.continuousScan,onContinuousChange:setContinuousScan,
+      onCode:async code=>{if(!input.isConnected)throw Error('Màn hình đã thay đổi. Hãy mở lại camera.');input.value=code;const result=await onRead?.(code,input);return {message:result||'Đã điền mã. Tiếp tục quét hoặc đóng camera để kiểm tra.'};},
+      onManual:()=>input.isConnected&&input.focus(),onAuthExpired:()=>{stopCamera();location.hash='#account';}
+    });phoneScanner.open();
+  };
+}
+function scanFieldEnter(ids) {
+  for(let i=0;i<ids.length;i++){const input=$('#'+ids[i]);if(!input)continue;input.addEventListener('keydown',event=>{if(event.key!=='Enter')return;event.preventDefault();if(state.continuousScan){const next=$('#'+ids[i+1]);if(next){next.focus();next.select?.();}}});}
+}
+async function fillItemCode(code,input) {
+  const result=await api('/materials?q='+encodeURIComponent(code));if(!input.isConnected)return;
+  const match=result.materials.find(m=>m.item_code===code||m.samsung===code);if(match)input.value=match.item_code;
+  return match?'Đã tra và điền ITEM. Kiểm tra thông tin trước khi xác nhận.':'Đã điền mã; cần kiểm tra ITEM trong MM trước khi xác nhận.';
+}
 document.addEventListener('visibilitychange', () => { if (document.hidden && $('#camera-dialog').open) $('#camera-dialog').close(); });
 
 async function materials(id) {
@@ -222,7 +259,8 @@ async function materials(id) {
     const result = await api('/materials?q=' + encodeURIComponent(q)); if (id !== renderId || !$('#mm-results')) return;
     $('#mm-results').innerHTML = `<p class="muted">${result.materials.length} kết quả hiển thị · ${number(result.total)} vật tư trong MM${result.materials.length === 200 ? ' · Nhập từ khóa cụ thể hơn để thu hẹp.' : ''}</p>` + (result.materials.length ? `<div class="table-wrap"><table><thead><tr><th>ITEM / Samsung</th><th>Vật tư</th><th>Maker / Vendor</th><th>Location</th><th>Selling Q’ty / MOQ</th></tr></thead><tbody>${result.materials.map(m => `<tr><td>${escape(m.item_code)}<small>${escape(m.samsung)}</small></td><td class="wrap">${escape(m.item)}<small>${escape(m.description)}</small></td><td>${escape(m.maker)}<small>${escape(m.vendor)}</small></td><td>${escape(m.location) || '—'}</td><td>${number(m.selling_qty)}<small>MOQ ${number(m.moq)}</small></td></tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>` : empty('Chưa có kết quả', result.total ? 'Thử tìm bằng mã ITEM hoặc mã Samsung khác.' : 'Quản trị viên cần nhập danh mục MM trước khi đối chiếu CKD.', 'search'));
   };
-  formAction('#mm-search', async b => search(b.q));
+  scanFlowBar($('.panel'));fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu MM. Quét mã tiếp theo để xem kết quả mới.';});
+  formAction('#mm-search', async b => {await search(b.q);if(state.continuousScan)$('#mm-q')?.select();});
   if ($('#mm-template')) $('#mm-template').onclick = () => downloadText('work-area-mm-template.csv', '\uFEFFitem_code,samsung,item,description,maker,vendor,location,selling_qty,moq\n');
   formAction('#mm-import', async (_, form) => { const file = $('#mm-file').files[0]; if (!file || file.size > 2_000_000) throw Error('Chọn CSV có dung lượng tối đa 2 MB.'); const result = await api('/materials/import', { method:'POST', data:{ csv:await file.text() } }); toast(`Đã nhập ${result.count} vật tư.`); form.reset(); await search($('#mm-q').value); });
   try { await search(''); } catch(e) { if (id === renderId) $('#mm-results').innerHTML = empty('Chưa tải được MM',escape(e.message),'sync'); }
@@ -232,6 +270,7 @@ function downloadText(name, text) { const url = URL.createObjectURL(new Blob([te
 async function ckd() {
   if (!state.user) { $('#main').innerHTML = needsLogin('Kiểm tra CKD'); return; }
   $('#main').innerHTML = `${pageTop('Kiểm tra CKD', 'Đối chiếu hai nhãn · Xác nhận từng box', '<a class="button small" href="/api/export?kind=boxes">' + icon('download') + ' Xuất Excel</a>')}<div class="columns"><section class="panel">${readOnlyNote()}<h2>Thông tin đối chiếu</h2><form id="ckd-form">${field('Phiếu / lô nhận hàng','delivery',{placeholder:'VD: PN-2026-001',extra:'maxlength="200"'})}${field('ITEM code','item_code',{placeholder:'Mã ITEM trong MM',extra:'maxlength="200"'})}${field('Barcode nhãn Samsung','label_a',{placeholder:'Quét nhãn thứ nhất',extra:'maxlength="500"'})}${field('Barcode nhãn đối chiếu','label_b',{placeholder:'Quét nhãn thứ hai',extra:'maxlength="500"'})}<div class="field-row">${field('Maker trên nhãn','maker',{placeholder:'VD: YAGEO',extra:'maxlength="200"'})}${field('MOQ box','qty',{type:'number',placeholder:'Số lượng trong box',extra:'min="1" max="1000000000" step="1" inputmode="numeric"'})}</div>${field('Mã box duy nhất trong phiếu/lô','box_ref',{placeholder:'Mã riêng của box, tránh xác nhận trùng',extra:'maxlength="200"'})}<p class="form-message" role="alert"></p><button class="button primary full" type="submit">${icon('ckd')} Đối chiếu hai nhãn</button></form></section><div><section class="panel"><h2>Quy tắc kiểm tra hiện tại</h2><div class="notice">Đối chiếu chính xác toàn bộ barcode sau khi bỏ khoảng trắng ở hai đầu và chuyển thành chữ hoa. Hai nhãn phải cùng khớp mã Samsung trong MM; Maker phải khớp Maker MM.</div><p class="muted">Mỗi phiếu/lô có tổng số lượng riêng theo ITEM. Một mã box chỉ được xác nhận một lần trong cùng phiếu/lô. Server kiểm tra lại tổng số lượng ngay khi xác nhận để tránh cộng trùng giữa các thiết bị.</p><p class="muted">Nếu hai nhãn thực tế có định dạng khác nhau hoặc MM có nhiều Maker, cần bổ sung quy tắc nghiệp vụ trước khi sử dụng quy trình đó.</p><a href="#mm" class="button small">${icon('search')} Xem danh mục MM</a></section><section class="panel"><h3>Xác nhận có kiểm soát</h3><p class="muted no-margin">Không tự xác nhận nếu thiếu MM, nhãn không khớp hoặc tổng sau box vượt Selling Q’ty. Số lượng Selling Q’ty hiện được lấy từ MM; cần cập nhật đúng phiếu nhận trước khi làm việc.</p></section></div></div>`;
+  scanFlowBar($('#ckd-form').closest('.panel'));fieldCamera('item_code','CKD · ITEM code',fillItemCode);fieldCamera('label_a','CKD · Nhãn Samsung');fieldCamera('label_b','CKD · Nhãn đối chiếu');fieldCamera('box_ref','CKD · Mã box');scanFieldEnter(['item_code','label_a','label_b','box_ref']);
   formAction('#ckd-form', async body => {
     const r = await api('/ckd/check', { method:'POST', data:body });
     detail('Bảng check CKD', `<div class="result-banner ${r.pass ? '' : 'fail'}">${r.pass ? 'PASS · Hai nhãn khớp' : 'Chưa đạt · Cần kiểm tra lại'}</div><p class="result-info">Samsung: <strong>${escape(body.label_a)}</strong><br>ITEM code: <strong>${escape(body.item_code)}</strong></p>${r.material ? `<hr class="divider"><dl class="detail-list">${[['Item',r.material.item],['Description',r.material.description],['Maker',r.material.maker],['Vendor',r.material.vendor || '—'],['Location',r.material.location || '—'],['Selling Q’ty',number(r.material.selling_qty)],['MOQ box',number(r.qty)],['Đã xác nhận',number(r.total)],['Sau box này',number(r.after)]].map(([k,v]) => `<dt>${k}</dt><dd>${escape(v)}</dd>`).join('')}</dl><div class="notice ${r.over ? 'error' : r.pass ? 'success' : 'warning'}"><strong>${escape(r.reason)}</strong><br>Phiếu/lô: ${escape(body.delivery)} · Đã xác nhận: ${r.boxes} box${r.over ? `<br>VƯỢT ${number(r.after - r.material.selling_qty)} · Chưa thể xác nhận box.` : ''}</div>` : `<div class="notice warning">${escape(r.reason)}</div>`}<div class="actions equal">${button('Để sau','ckd-later')}<button id="ckd-confirm" class="button primary" ${r.pass && !r.over && canWrite() ? '' : 'disabled'}>Xác nhận box</button></div><p class="form-message" id="ckd-error" role="alert"></p>`);
@@ -253,6 +292,7 @@ async function holding(id) {
     $('#holding-balances').innerHTML = r.balances.length ? `<div class="table-wrap"><table><thead><tr><th>ITEM / Vật tư</th><th>Location</th><th>Tồn</th></tr></thead><tbody>${r.balances.map(b => `<tr><td>${escape(b.item_code)}<small>${escape(b.item)}</small></td><td>${escape(b.location)}</td><td>${number(b.qty)}</td></tr>`).join('')}</tbody></table></div>` : empty('Holding đang trống','Giao dịch nhập sẽ cập nhật tồn kho tại đây.','box');
     $('#holding-history').innerHTML = r.movements.length ? `<div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>ITEM / Location</th><th>Thay đổi</th><th>Người thao tác</th><th>Ghi chú</th></tr></thead><tbody>${r.movements.map(m => `<tr><td>${time(m.created_at)}</td><td>${escape(m.item_code)}<small>${escape(m.location)}</small></td><td class="${m.qty > 0 ? 'qty-positive' : 'qty-negative'}">${m.qty > 0 ? '+' : ''}${number(m.qty)}</td><td>${escape(m.name)}</td><td class="wrap">${escape(m.note)}</td></tr>`).join('')}</tbody></table></div>` : empty('Chưa có giao dịch','Hiển thị tối đa 100 giao dịch gần đây.');
   };
+  scanFlowBar($('#holding-form').closest('.panel'));fieldCamera('item_code','Holding · ITEM code',fillItemCode);fieldCamera('location','Holding · Location');scanFieldEnter(['item_code','location']);
   let retry = null;
   formAction('#holding-form', async (b, f) => { const fingerprint = JSON.stringify(b); if (!retry || retry.fingerprint !== fingerprint) retry = { fingerprint, request_id:crypto.randomUUID() }; const result = await api('/holding', { method:'POST', data:{ ...b, request_id:retry.request_id } }); retry = null; f.reset(); toast(`Đã lưu giao dịch. Tồn tại Location: ${number(result.balance ?? 0)}.`); await load(); });
   $('#reload-holding').onclick = () => load().catch(e => toast(e.message));

@@ -75,7 +75,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'workspace-ui-20261113-2' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'continuous-scan-20261113-3' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -108,15 +108,18 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');
       if (mutating && req.headers['x-csrf-token'] !== u.csrf) fail(403, 'Phiên thao tác không hợp lệ. Hãy tải lại trang.');
       if (req.method === 'GET' && path === '/api/preferences') {
-        const row=db.prepare('SELECT navigation,updated_at FROM user_preferences WHERE user_id=?').get(u.id);
-        return send(res,200,{navigation:row ? JSON.parse(row.navigation) : ['home','scan','assistant','account'],updated_at:row?.updated_at || null});
+        const row=db.prepare('SELECT navigation,continuous_scan,updated_at FROM user_preferences WHERE user_id=?').get(u.id);
+        return send(res,200,{navigation:row ? JSON.parse(row.navigation) : ['home','scan','assistant','account'],continuous_scan:row ? Boolean(row.continuous_scan) : true,updated_at:row?.updated_at || null});
       }
       if (req.method === 'POST' && path === '/api/preferences') {
-        const body=await jsonBody(req),navigation=body.navigation;
+        const body=await jsonBody(req),hasNavigation=Object.hasOwn(body,'navigation'),hasContinuous=Object.hasOwn(body,'continuous_scan'),navigation=hasNavigation ? body.navigation : ['home','scan','assistant','account'];
         const allowed=['home','scan','ckd','cut','holding','mm','assistant','account'];
+        if (!hasNavigation && !hasContinuous) fail(400,'Cần gửi phím tắt hoặc chế độ quét.');
+        if (hasContinuous && typeof body.continuous_scan!=='boolean') fail(400,'Chế độ quét liên tục phải là bật hoặc tắt.');
         if (!Array.isArray(navigation) || navigation.length<3 || navigation.length>5 || new Set(navigation).size!==navigation.length || navigation.some(x=>typeof x!=='string' || !allowed.includes(x))) fail(400,'Chọn từ 3 đến 5 phím tắt khác nhau trong danh sách.');
-        db.prepare('INSERT INTO user_preferences(user_id,navigation) VALUES (?,?) ON CONFLICT(user_id) DO UPDATE SET navigation=excluded.navigation,updated_at=CURRENT_TIMESTAMP').run(u.id,JSON.stringify(navigation));
-        return send(res,200,{navigation});
+        db.prepare('INSERT INTO user_preferences(user_id,navigation,continuous_scan) VALUES (?,?,?) ON CONFLICT(user_id) DO UPDATE SET navigation=CASE WHEN ? THEN excluded.navigation ELSE user_preferences.navigation END,continuous_scan=CASE WHEN ? THEN excluded.continuous_scan ELSE user_preferences.continuous_scan END,updated_at=CURRENT_TIMESTAMP').run(u.id,JSON.stringify(navigation),body.continuous_scan===false?0:1,hasNavigation?1:0,hasContinuous?1:0);
+        const saved=db.prepare('SELECT navigation,continuous_scan FROM user_preferences WHERE user_id=?').get(u.id);
+        return send(res,200,{navigation:JSON.parse(saved.navigation),continuous_scan:Boolean(saved.continuous_scan)});
       }
       if (req.method === 'POST' && path === '/api/logout') {
         db.prepare('DELETE FROM sessions WHERE token_hash=?').run(u.token_hash);

@@ -127,6 +127,20 @@ test('shortcut preferences are authenticated, validated, private per account and
   assert.equal((await request('/api/preferences',viewer,'POST',{navigation},{'X-CSRF-Token':'wrong'})).status,403);
 });
 
+test('continuous scanning defaults on and partial updates preserve shortcuts and account isolation', async () => {
+  assert.equal((await request('/api/preferences',viewer)).data.continuous_scan,true);
+  const navigation=(await request('/api/preferences',viewer)).data.navigation;
+  const disabled=await request('/api/preferences',viewer,'POST',{continuous_scan:false});
+  assert.equal(disabled.status,200);assert.equal(disabled.data.continuous_scan,false);
+  assert.deepEqual(disabled.data.navigation,navigation);
+  assert.equal((await request('/api/preferences',inspector)).data.continuous_scan,true);
+  await request('/api/preferences',viewer,'POST',{navigation});
+  assert.equal((await request('/api/preferences',viewer)).data.continuous_scan,false);
+  for(const invalid of [0,1,'false',null])assert.equal((await request('/api/preferences',viewer,'POST',{continuous_scan:invalid})).status,400);
+  assert.equal((await request('/api/preferences',viewer,'POST',{})).status,400);
+  assert.equal((await request('/api/preferences',viewer,'POST',{continuous_scan:true})).data.continuous_scan,true);
+});
+
 test('phone scan duplicate checks use all history and recheck atomically before automatic saves', async () => {
   const inspectorId=db.prepare('SELECT id FROM users WHERE username=?').get('inspector').id;
   const insert=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,?,?)');
@@ -189,8 +203,11 @@ test('rejects malformed CSV and persists records after reopening a disk database
   try {
     const path = join(dir,'db.sqlite'); const first = openDatabase(path);
     first.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run('durable','Stored name','not-a-login-password','viewer');
-    first.prepare('INSERT INTO user_preferences(user_id,navigation) VALUES (?,?)').run(1,JSON.stringify(['scan','home','account']));first.close();
+    first.prepare('INSERT INTO user_preferences(user_id,navigation,continuous_scan) VALUES (?,?,0)').run(1,JSON.stringify(['scan','home','account']));first.close();
     const second = openDatabase(path); assert.equal(second.prepare('SELECT name FROM users').get().name,'Stored name');assert.deepEqual(JSON.parse(second.prepare('SELECT navigation FROM user_preferences WHERE user_id=1').get().navigation),['scan','home','account']);second.close();
+    const third=openDatabase(path);assert.equal(third.prepare('SELECT continuous_scan FROM user_preferences WHERE user_id=1').get().continuous_scan,0);
+    third.exec('ALTER TABLE user_preferences DROP COLUMN continuous_scan');third.close();
+    const migrated=openDatabase(path);const pref=migrated.prepare('SELECT * FROM user_preferences WHERE user_id=1').get();assert.equal(pref.continuous_scan,1);assert.deepEqual(JSON.parse(pref.navigation),['scan','home','account']);migrated.close();
   } finally { rmSync(dir,{ recursive:true,force:true }); }
 });
 
