@@ -298,6 +298,7 @@ test('Excel MM import authorizes uploads, imports every sheet atomically and sha
   assert.equal((await request('/api/materials/import',admin,'POST',body(),{'X-CSRF-Token':'wrong'})).status,403);
   const result=await request('/api/materials/import',admin,'POST',body());assert.equal(result.status,200);assert.equal(result.data.count,3);assert.deepEqual(result.data.sheets.map(s=>s.rows),[1,1,1]);
   const rows=await request('/api/materials?field=item_code&q=EXCEL-WORKBOOK-ITEM',viewer);assert.equal(rows.data.matched,3);assert.equal(new Set(rows.data.materials.map(r=>r.source_sheet)).size,3);
+  assert.equal((await request('/api/stats',viewer)).data.materials,db.prepare('SELECT COUNT(*) n FROM (SELECT item_code FROM materials UNION SELECT item_code FROM mm_inventory)').get().n);
   const scanned=await request('/api/scans',inspector,'POST',{request_id:randomUUID(),barcode:'EXCEL-BAR-3',mode:'Stock'});assert.equal(scanned.status,201);assert.equal(scanned.data.stock.quantity,3.75);assert.equal(scanned.data.stock.lot_no,'LOT-3');assert.equal(scanned.data.stock.vendor,'Vendor');
   const before=db.prepare('SELECT COUNT(*) n FROM mm_inventory').get().n;
   XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Not MM data']]),'Bad Sheet');

@@ -153,7 +153,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'GET' && path === '/api/stats') return send(res, 200, {
         scans: db.prepare('SELECT COUNT(*) n FROM scans').get().n,
-        materials: db.prepare('SELECT COUNT(*) n FROM materials').get().n,
+        materials: db.prepare('SELECT COUNT(*) n FROM (SELECT item_code FROM materials UNION SELECT item_code FROM mm_inventory)').get().n,
         boxes: db.prepare('SELECT COUNT(*) n FROM boxes').get().n,
         holding: db.prepare('SELECT COALESCE(SUM(qty),0) n FROM movements').get().n
       });
