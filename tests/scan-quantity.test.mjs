@@ -30,3 +30,18 @@ test('legacy scans gain Stock QTY once without changing saved evidence or non-St
     assert.equal(db.prepare('SELECT SUM(quantity) n FROM scans').get().n,25);db.close();
   }finally{rmSync(dir,{recursive:true,force:true});}
 });
+
+test('legacy HS duplicates gain comparison results once and retain them after deleting the original',()=>{
+  const dir=mkdtempSync(join(tmpdir(),'work-area-hs-result-'));
+  try{
+    const path=join(dir,'legacy.sqlite');let db=openDatabase(path);
+    db.exec('ALTER TABLE scans DROP COLUMN prior_count');
+    db.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run('legacy','Legacy','hash','admin');
+    const save=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,?,1)');
+    save.run('legacy-hs-1','HS-REPEAT','HS');save.run('legacy-hs-2','HS-REPEAT','HS');save.run('legacy-label','HS-REPEAT','Label');
+    db.close();db=openDatabase(path);
+    assert.deepEqual(db.prepare('SELECT prior_count FROM scans ORDER BY id').all().map(r=>r.prior_count),[0,1,0]);
+    db.exec('DELETE FROM scans WHERE id=1');db.close();db=openDatabase(path);
+    assert.equal(db.prepare('SELECT prior_count FROM scans WHERE id=2').get().prior_count,1);db.close();
+  }finally{rmSync(dir,{recursive:true,force:true});}
+});

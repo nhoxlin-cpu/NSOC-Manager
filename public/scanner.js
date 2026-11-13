@@ -184,7 +184,7 @@ export class PhoneScanner {
     if(code!==this.lastCode)this.lastImage=null;
     if(image)this.lastImage=image;
     this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
-    const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:!force};
+    const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:this.options.mode!=='HS'&&!force};
     try {
       if(this.options.autoCapture && !this.options.onCode){
         if(!this.lastImage)throw Error('Chưa chụp được ảnh đối chiếu. Hãy đưa mã vào khung và quét lại.');
@@ -196,13 +196,14 @@ export class PhoneScanner {
       try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
       catch(e) { if (!e.network) throw e; online=false; }
       if (!this.active) return;
-      if ((!force || this.options.mode==='HS') && (known>0 || local>0 || this.seen.has(code))) { this.duplicate(code,known,local,online); return; }
+      if (this.options.mode!=='HS' && !force && (known>0 || local>0 || this.seen.has(code))) { this.duplicate(code,known,local,online); return; }
       if (!online) {
         await this.options.enqueue({...payload,reject_duplicate:false}); this.queued++; this.seen.set(code,true); this.paint('pending','Chờ đồng bộ · Chưa kiểm tra trùng toàn server',code); this.feedback(false);
       } else {
         try {
           const result=await this.options.api('/scans',{method:'POST',data:payload}); this.saved++; this.seen.set(code,true);this.stockUI(result.stock);
-          this.paint('success',this.options.mode==='HS'?'HS · KHÔNG TRÙNG · Đã lưu':result.barcode_count>1 ? `Đã lưu thêm · Mã có ${result.barcode_count} lượt trên server` : 'Đã lưu · Đã kiểm tra trùng trên server',code); this.feedback(false);
+          if(this.options.mode==='HS'&&result.is_duplicate)this.duplicate(code,result.prior_count,0,true,true);
+          else{this.paint('success',this.options.mode==='HS'?'HS · KHÔNG TRÙNG · Đã lưu':result.barcode_count>1 ? `Đã lưu thêm · Mã có ${result.barcode_count} lượt trên server` : 'Đã lưu · Đã kiểm tra trùng trên server',code);this.feedback(false);}
         } catch(e) {
           if (e.code === 'DUPLICATE_SCAN') { this.duplicate(code,e.count,local,true); return; }
           if (!e.network) throw e;
@@ -213,14 +214,14 @@ export class PhoneScanner {
     } catch(e) { this.paint('error',e.message,code); this.$('#scanner-repeat').textContent='Thử lưu lại mã'; if (e.status === 401) this.options.onAuthExpired?.(); }
     finally { this.busy=false; if (this.active) {this.$('#scanner-repeat').disabled=!this.lastCode;this.singlePaused=!this.continuous;this.flowUI();} this.counts(); }
   }
-  duplicate(code,serverCount,localCount,online) {
+  duplicate(code,serverCount,localCount,online,saved=false) {
     this.repeatIsDuplicate=true;
     const label=serverCount ? `TRÙNG ${serverCount} LƯỢT · ${code}` : `ĐÃ QUÉT TRÊN THIẾT BỊ · ${code}`;
     this.alerts=[{code,label},...this.alerts.filter(a=>a.code !== code)].slice(0,3);
     const container=this.$('#scanner-alerts'); container.replaceChildren();
     for (const alert of this.alerts) { const row=document.createElement('div'); row.className='scanner-alert'; row.textContent=alert.label; container.append(row); }
-    this.paint('duplicate',serverCount ? `TRÙNG ${serverCount} lượt trên server · Chưa lưu thêm` : online ? 'Mã đã có trong phiên hoặc hàng chờ · Chưa lưu thêm' : 'Mã đã quét trên thiết bị · Chưa kiểm tra toàn server',code);
-    this.$('#scanner-repeat').textContent=this.options.mode==='HS'?'Kiểm tra lại mã':'Lưu thêm lượt cùng mã'; this.feedback(true);
+    this.paint('duplicate',saved?`HS · TRÙNG ${serverCount} lượt trước · Đã lưu lượt này`:serverCount ? `TRÙNG ${serverCount} lượt trên server · Chưa lưu thêm` : online ? 'Mã đã có trong phiên hoặc hàng chờ · Chưa lưu thêm' : 'Mã đã quét trên thiết bị · Chưa kiểm tra toàn server',code);
+    this.$('#scanner-repeat').textContent='Lưu thêm lượt cùng mã'; this.feedback(true);
   }
   stockUI(row){
     const el=this.$('#scanner-stock-info');el.replaceChildren();el.hidden=this.options.mode!=='Stock'||!row;
