@@ -1,4 +1,4 @@
-import { PhoneScanner } from '/scanner.js?v=20261113-3';
+import { PhoneScanner } from '/scanner.js?v=20261113-4';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {

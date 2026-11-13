@@ -4,3 +4,31 @@
 .scanner-body>.scanner-frame-label{left:0;right:0;bottom:1px;width:auto;font-size:8px;padding:0 3px;line-height:1.4}
 
 .scanner-continuous{border:1px solid #a4c9e45c;border-radius:12px;background:#162e48;color:#b9c9dc;display:flex;align-items:center;gap:5px;padding:8px 10px;font-size:10px;flex-shrink:0;line-height:1.3}.scanner-continuous strong{font-size:10px}.scanner-continuous.enabled{color:#a6efd8;border-color:#85dec37a;background:#16443f}.scanner-result-actions{display:flex;gap:8px}.scanner-result-actions>button{min-width:0;flex:1}.scanner-next{border:1px solid #8ceacb;border-radius:14px;min-height:43px;background:#78dfc1;color:#153e39;padding:9px;font-size:11px;font-weight:650}.phone-scanner[data-scan-flow=paused] .scanner-laser{animation-play-state:paused;opacity:.35}@media(max-height:740px){.scanner-next{min-height:37px;padding:7px;font-size:10px}.scanner-continuous{font-size:9px;padding:6px 8px}.scanner-continuous strong{font-size:9px}}@media(orientation:landscape) and (max-height:550px){.scanner-next{min-height:30px;font-size:9px;padding:5px}.scanner-continuous{padding:5px 7px;font-size:9px}}
+/* Compact camera workspace: controls share two rows, viewfinder keeps the space. */
+.phone-scanner .scanner-layout{gap:10px;padding:calc(10px + env(safe-area-inset-top)) 12px calc(10px + env(safe-area-inset-bottom))}
+.phone-scanner .scanner-top{padding:13px 14px;border-radius:19px;max-height:34dvh}
+.phone-scanner .scanner-heading h2{font-size:19px;margin-top:4px}
+.phone-scanner .scanner-eyebrow{font-size:7px;letter-spacing:1.1px}
+.phone-scanner .scanner-status{margin:7px 0;font-size:10px;min-height:14px}
+.phone-scanner .scanner-result{min-height:40px;padding:9px 11px;font-size:15px;border-radius:10px}
+.phone-scanner .scanner-count{margin:7px 0;font-size:9px}
+.phone-scanner .scanner-repeat,.phone-scanner .scanner-next{min-height:34px;padding:7px 9px;font-size:10px;border-radius:10px}
+.phone-scanner .scanner-controls{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px;padding:10px;border-radius:18px}
+.phone-scanner .scanner-formats{gap:5px;margin:0;min-width:0}
+.phone-scanner .scanner-formats button{display:flex;align-items:center;justify-content:center;gap:4px;min-width:0;min-height:34px;padding:7px 6px;border-radius:10px;font-size:10px}
+.phone-scanner .scanner-formats svg{width:14px;height:14px}
+.phone-scanner .scanner-tools{gap:6px;min-width:0}
+.phone-scanner .scanner-zoom-label{flex:0 0 58px;width:58px;min-width:0}
+.phone-scanner .scanner-zoom-label select{width:58px;min-height:34px;padding:6px 5px;font-size:11px;border-radius:10px}
+.phone-scanner .scanner-round-tools{gap:5px}
+.phone-scanner .scanner-round{width:34px;height:34px;min-width:34px;min-height:34px}
+.phone-scanner .scanner-round svg{width:18px;height:18px}
+.phone-scanner .scanner-assist{grid-column:1/-1;margin:0;gap:7px}
+.phone-scanner .scanner-assist button{min-height:30px;padding:6px 9px;font-size:9px;border-radius:9px}
+.phone-scanner .scanner-assist-note{grid-column:1/-1;margin:0;font-size:8px}
+.phone-scanner .scanner-bottom{min-height:40px;gap:10px}
+.phone-scanner .scanner-back,.phone-scanner .scanner-flash{width:40px;height:40px;min-width:40px;min-height:40px;box-shadow:none}
+.phone-scanner .scanner-back svg,.phone-scanner .scanner-flash svg{width:21px;height:21px}
+.phone-scanner .scanner-manual{font-size:10px;padding:9px 13px;min-height:34px}
+@media(max-width:350px){.phone-scanner .scanner-controls{padding:8px;gap:6px}.phone-scanner .scanner-formats button{font-size:9px;gap:3px;padding:6px 4px}.phone-scanner .scanner-tools{gap:4px}.phone-scanner .scanner-round-tools{gap:4px}.phone-scanner .scanner-round{width:32px;height:32px;min-width:32px;min-height:32px}.phone-scanner .scanner-zoom-label,.phone-scanner .scanner-zoom-label select{width:52px;flex-basis:52px}}
+@media(orientation:landscape) and (max-height:550px){.phone-scanner .scanner-layout{gap:9px}.phone-scanner .scanner-top{max-height:100%;padding:11px}.phone-scanner .scanner-controls{display:flex;flex-direction:column;align-items:stretch;gap:8px}.phone-scanner .scanner-formats{margin:0}.phone-scanner .scanner-bottom{bottom:10px;left:12px;width:calc(100% - 342px)}.phone-scanner .scanner-back,.phone-scanner .scanner-flash{width:36px;height:36px;min-width:36px;min-height:36px}.phone-scanner .scanner-manual{font-size:9px;padding:7px 9px}}

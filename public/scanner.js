@@ -4,7 +4,6 @@ const symbols = {
   flash:'<path d="m13 2-9 12h7l-1 8L21 9h-8Z"/>',
   sound:'<path d="M11 4 5 9H2v6h3l6 5ZM15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/>',
   vibration:'<rect x="7" y="3" width="10" height="18" rx="2"/><path d="m3 6-1 3 1 3-1 3 1 3m18-12 1 3-1 3 1 3-1 3M11 18h2"/>',
-  flip:'<path d="M3 8V3h5m13 13v5h-5M3 8a9 9 0 0 1 16-3m2 11a9 9 0 0 1-16 3"/><circle cx="12" cy="12" r="3"/>',
   barcode:'<path d="M3 4v16M6 4v16M10 4v16M12 4v16M16 4v16M20 4v16"/>',
   qr:'<path d="M3 3h6v6H3Zm12 0h6v6h-6ZM3 15h6v6H3Zm12 0h3v3h3v3h-6Zm-3-3h3m3 0h3M12 3v6m0 9v3"/>',
   check:'<path d="m4 12 5 5L20 6"/>'
@@ -44,7 +43,7 @@ export class PhoneScanner {
         <div class="scanner-alerts" id="scanner-alerts" aria-live="polite"></div>
       </section><div class="scanner-body"><div class="scanner-frame" id="scanner-frame" tabindex="0" role="group" aria-label="Vùng quét: kéo để di chuyển, kéo góc để đổi kích thước. Phím mũi tên để di chuyển, cộng trừ để đổi cỡ.">${['tl','tr','bl','br'].map(corner=>`<button type="button" class="scanner-corner ${corner}" data-resize="${corner}" aria-label="Kéo góc ${corner} để thay đổi kích thước vùng quét"></button>`).join('')}<div class="scanner-laser"></div><span class="scanner-frame-label" id="scanner-frame-label">Đặt barcode vào trong khung</span></div></div>
       <section class="scanner-controls" aria-label="Điều khiển camera"><div class="scanner-formats" role="tablist" aria-label="Định dạng mã"><button id="scanner-barcode" role="tab">${svg('barcode')} Barcode</button><button id="scanner-qr" role="tab">${svg('qr')} QR</button></div>
-        <div class="scanner-tools"><label class="scanner-zoom-label"><span class="sr-only">Mức phóng đại camera</span><select id="scanner-zoom" aria-label="Mức phóng đại camera" disabled><option value="1">×1</option></select></label><div class="scanner-round-tools"><button class="scanner-round" id="scanner-flip" aria-label="Đổi camera" disabled>${svg('flip')}</button><button class="scanner-round" id="scanner-vibration" aria-label="Rung khi đọc mã">${svg('vibration')}</button><button class="scanner-round" id="scanner-sound" aria-label="Âm thanh khi đọc mã">${svg('sound')}</button></div></div><div class="scanner-assist"><button id="scanner-glare" aria-pressed="false">${svg('glare')} Nhãn bóng / chói</button><button id="scanner-reset-view">Đặt lại khung</button></div><p class="scanner-assist-note" id="scanner-assist-note" hidden></p>
+        <div class="scanner-tools"><label class="scanner-zoom-label"><span class="sr-only">Mức phóng đại camera</span><select id="scanner-zoom" aria-label="Mức phóng đại camera" disabled><option value="1">×1</option></select></label><div class="scanner-round-tools"><button class="scanner-round" id="scanner-vibration" aria-label="Rung khi đọc mã">${svg('vibration')}</button><button class="scanner-round" id="scanner-sound" aria-label="Âm thanh khi đọc mã">${svg('sound')}</button></div></div><div class="scanner-assist"><button id="scanner-glare" aria-pressed="false">${svg('glare')} Nhãn bóng / chói</button><button id="scanner-reset-view">Đặt lại khung</button></div><p class="scanner-assist-note" id="scanner-assist-note" hidden></p>
       </section><div class="scanner-bottom"><button class="scanner-back" id="scanner-back" aria-label="Đóng camera">${svg('back')}</button><button class="scanner-manual" id="scanner-manual">Nhập mã bằng tay</button><button class="scanner-flash" id="scanner-flash" aria-label="Bật đèn flash" aria-pressed="false" disabled>${svg('flash')}</button></div></div>`;
     this.$=s => dialog.querySelector(s); this.video=this.$('video');this.$('.scanner-body').append(this.$('#scanner-frame-label'));
     this.$('#scanner-title').textContent=options.title || `Scan ${options.mode}`;
@@ -56,7 +55,7 @@ export class PhoneScanner {
     this.$('#scanner-barcode').onclick=() => this.changeFormat('barcode'); this.$('#scanner-qr').onclick=() => this.changeFormat('qr');
     this.$('#scanner-sound').onclick=() => { this.sound=!this.sound; remember('sound',this.sound); this.settings(); if (this.sound) this.feedback(false); };
     this.$('#scanner-vibration').onclick=() => { this.vibration=!this.vibration; remember('vibration',this.vibration); this.settings(); if (this.vibration) navigator.vibrate?.(40); };
-    this.$('#scanner-flash').onclick=() => this.flash(); this.$('#scanner-flip').onclick=() => this.flip();
+    this.$('#scanner-flash').onclick=() => this.flash();
     this.$('#scanner-zoom').onchange=e => this.zoom(Number(e.target.value));
     this.$('#scanner-glare').onclick=()=>this.setGlare(!this.glare);this.$('#scanner-reset-view').onclick=()=>this.resetView();
     this.installGestures();
@@ -132,8 +131,6 @@ export class PhoneScanner {
     zoom.disabled=false;zoom.value=String(this.opticalZoom);zoom.title='Chọn mức zoom hoặc chụm hai ngón trên vùng camera';
     if (Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) try {await this.track.applyConstraints({advanced:[{focusMode:'continuous'}]});} catch {}
     this.layoutRoi();if(this.glare)await this.setGlare(true);
-    try { this.devices=(await navigator.mediaDevices.enumerateDevices()).filter(d=>d.kind === 'videoinput'); } catch { this.devices=[]; }
-    this.$('#scanner-flip').disabled=this.devices.length < 2;
   }
   capture() {
     if (this.video.readyState < 2 || !this.video.videoWidth || !this.video.videoHeight) return false;
@@ -286,13 +283,6 @@ export class PhoneScanner {
       if(Object.keys(advanced).length)await track.applyConstraints({advanced:[advanced]});
     }catch{note.textContent='Đang tăng tương phản ảnh đọc. Camera chưa áp dụng được giảm phơi sáng; hãy nghiêng nhẹ để tránh phản chiếu.';}
     this.$('#scanner-flash').disabled=!this.caps.torch||on;
-  }
-  async flip() {
-    if (this.changing || !this.devices?.length) return;
-    this.changing=true; this.$('#scanner-flip').disabled=true;
-    try { const current=this.track?.getSettings?.().deviceId; const at=this.devices.findIndex(d=>d.deviceId === current); const next=this.devices[(at+1)%this.devices.length]; await this.startVideo(next.deviceId); this.paint('ready','Đã đổi camera · Đưa mã vào khung'); }
-    catch(e) { this.paint('error','Không đổi được camera. Hãy đóng và mở camera lại.'); }
-    finally { this.changing=false; }
   }
   releaseStream() { this.stream?.getTracks().forEach(t=>t.stop()); this.stream=null; this.track=null; if (this.video) this.video.srcObject=null; }
   release() {

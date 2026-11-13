@@ -9,7 +9,7 @@
 - Mỗi tài khoản tự chọn 3–5 phím tắt, thay đổi thứ tự và dùng lại bố cục đã lưu trên thiết bị khác.
 - Quét HS / Stock / Label bằng bàn phím, máy scan hoặc camera điện thoại.
 - Quét liên tục mặc định bật trên HS / Stock / Label và camera điền mã CKD / MM / Holding. Nút bật/tắt lưu theo tài khoản; khi tắt, đọc một mã rồi chọn “Quét mã tiếp theo”. Quét điền mã vẫn cần xác nhận box hoặc giao dịch kho riêng.
-- Camera toàn màn hình: Barcode / QR, quét liên tục, tự lưu mã mới, cảnh báo trùng, đếm lượt; zoom, flash, âm thanh, rung và đổi camera khi thiết bị hỗ trợ.
+- Camera toàn màn hình gọn: Barcode / QR, quét liên tục, tự lưu mã mới, cảnh báo trùng, đếm lượt; zoom, flash, âm thanh và rung khi thiết bị hỗ trợ. Dùng camera sau, không có nút lật camera; điều khiển gộp hai hàng và nút quay lại/flash cỡ nhỏ.
 - Giữ một mã trước camera không tạo thêm lượt liên tục. Mã đã có chỉ được lưu thêm khi người dùng chủ động chọn.
 - Kéo khung để di chuyển, kéo góc để đổi kích thước, chụm hai ngón để zoom; có zoom ảnh khi camera không hỗ trợ zoom quang học và nút đặt lại khung.
 - Chế độ Nhãn bóng / chói tắt flash, giảm bù phơi sáng nếu thiết bị hỗ trợ và thử tăng tương phản ảnh đọc. Vùng phản chiếu trắng hoàn toàn vẫn cần đổi góc hoặc ánh sáng.
