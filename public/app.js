@@ -1,4 +1,4 @@
-import { renderCkd } from '/ckd.js?v=20261113-8';
+import { renderCkd } from '/ckd.js?v=20261113-10';
 import { PhoneScanner, zxing } from '/scanner.js?v=20261113-7';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

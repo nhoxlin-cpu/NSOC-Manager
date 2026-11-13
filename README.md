@@ -27,6 +27,7 @@
 - Tra cứu MM mở bằng 4 thư mục lớn dạng lưới 2 × 2: Location / Item code / Spec / Nhập file (admin). Mỗi thư mục mở một trang riêng có nút quay lại. Ba trang tra cứu có nút Xem, hỗ trợ quét camera và đường dẫn giữ đúng trang khi tải lại. Spec dùng description; CSV nhận tiêu đề Spec.
 - Nhập danh mục MM từ CSV UTF-8 tại **Tra cứu MM → Nhập file**, dành cho admin. **Cài đặt → Dữ liệu MM** vẫn dùng được. Mẫu cũ 9 cột vẫn dùng được; mẫu mới bổ sung qty và lot_no tùy chọn.
 - CKD: nhập XLSX hai sheet (Sheet1 SO, Sheet2 CKD model list), quét Samsung rồi ITEM bằng camera Barcode/QR hoặc máy quét. Đối chiếu Material Code / HS Code, Selling Code, SO Maker và Maker; hiện Item, Description, Vendor, MOQ, Selling Qty và tổng box.
+- Camera CKD hiển thị hai ô Samsung / ITEM riêng; dấu × xóa riêng một mã và giữ mã còn lại. Chọn ô để quét lại vào đúng vị trí.
 - CKD luôn hỏi Lưu / Không lưu. Lưu NG chỉ ghi lịch sử, không cộng SO. Tổng các box PASS gộp theo Samsung trong cùng đơn, gồm nhiều ITEM bán. Lịch sử gắn nhãn Thiếu / Đủ / Dư; box vượt Selling Qty có cảnh báo trước khi lưu. MOQ có nhiều quy cách yêu cầu nhập số lượng box thực tế và tính lại.
 - Mỗi file CKD nhập tạo một phiên đơn hàng riêng để không làm thay đổi lịch sử đơn cũ; mã box và mã yêu cầu chống cộng lặp. Xuất lịch sử CKD ra XLSX.
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.

@@ -46,13 +46,36 @@ export async function renderCkd(ctx){
   }
   function startCamera(){
     if(!workbook()){toast('Chọn file SO / CKD model list trước.');return;}stopCamera();camera?.close();autoCamera=true;
+    let target=$('#ckd-samsung').value.trim()?'item':'samsung';
+    const input=slot=>$('#ckd-'+slot);
+    function pairUI(){
+      for(const slot of ['samsung','item']){
+        const value=input(slot).value.trim(),card=$('#ckd-camera-'+slot);
+        card.classList.toggle('active',target===slot);card.classList.toggle('filled',Boolean(value));
+        card.querySelector('.ckd-camera-code').textContent=value||'Chưa quét';
+        card.querySelector('.ckd-camera-select').setAttribute('aria-pressed',String(target===slot));
+        card.querySelector('.ckd-camera-clear').hidden=!value;
+      }
+      $('#scanner-title').textContent=target==='samsung'?'CKD · 1/2 Quét Samsung':'CKD · 2/2 Quét ITEM';
+    }
+    function choose(slot,clear=false){
+      if(clear)input(slot).value='';target=slot;steps();pairUI();camera.resumeSingle();
+      // Clear the held result too: the next deliberate read may be the same code.
+      camera.lastCode='';camera.lastRead='';
+    }
     camera=new PhoneScanner($('#camera-dialog'),{title:$('#ckd-samsung').value?'CKD · 2/2 Quét ITEM':'CKD · 1/2 Quét Samsung',accountKey:'u'+owner,continuous:state.continuousScan,onContinuousChange:setContinuousScan,
       onCode:async code=>{
         if(!$('#ckd-pair-form'))throw Error('Màn hình đã thay đổi.');
-        if(!$('#ckd-samsung').value.trim()){$('#ckd-samsung').value=code;steps();$('#scanner-title').textContent='CKD · 2/2 Quét ITEM';return {message:'Đã nhận Samsung. Tiếp tục quét ITEM trên box.'};}
-        $('#ckd-item').value=code;const data=body();setTimeout(()=>{camera?.close();showCheck(data).catch(err=>toast(err.message));},0);return {message:'Đã đủ hai mã. Đang đối chiếu…'};
+        input(target).value=code;steps();target=$('#ckd-samsung').value.trim()?'item':'samsung';pairUI();
+        if(!$('#ckd-samsung').value.trim()||!$('#ckd-item').value.trim())return {message:target==='item'?'Đã nhận Samsung. Tiếp tục quét ITEM trên box.':'Đã nhận ITEM. Tiếp tục quét Samsung.'};
+        const data=body();setTimeout(()=>{camera?.close();showCheck(data).catch(err=>toast(err.message));},0);return {message:'Đã đủ hai mã. Đang đối chiếu…'};
       },onManual:()=>{$('#ckd-samsung').value?$('#ckd-item').focus():$('#ckd-samsung').focus();},onAuthExpired:()=>{camera?.close();location.hash='#account';}
-    });camera.open();
+    });
+    $('#camera-dialog').classList.add('ckd-camera');
+    $('#scanner-result').insertAdjacentHTML('beforebegin',`<div class="ckd-camera-pair">${[['samsung','Samsung'],['item','ITEM']].map(([slot,label])=>`<div class="ckd-camera-slot" id="ckd-camera-${slot}"><button type="button" class="ckd-camera-select" data-slot="${slot}" aria-label="Quét vào ô ${label}"><span class="ckd-camera-label">${label}</span><span class="ckd-camera-code">Chưa quét</span></button><button type="button" class="ckd-camera-clear" data-clear-slot="${slot}" aria-label="Xóa mã ${label}" hidden>×</button></div>`).join('')}</div>`);
+    document.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>choose(b.dataset.slot));
+    document.querySelectorAll('[data-clear-slot]').forEach(b=>b.onclick=()=>choose(b.dataset.clearSlot,true));
+    pairUI();camera.open();
   }
   $('#ckd-camera').onclick=startCamera;
   $('#ckd-samsung').oninput=steps;$('#ckd-samsung').onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();steps();$('#ckd-item').focus();}};
