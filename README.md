@@ -32,6 +32,9 @@
 - CKD ưu tiên phần quét ở trên; đơn hàng SO nằm bên dưới, mặc định thu gọn, có nút đổi đơn và xổ/ẩn. Thanh quét dùng nút liên tục và tự chụp ảnh giống mục thu thập dữ liệu; có tên phiên, nhập tay/máy quét, ảnh riêng Samsung/ITEM khi xác nhận, xem ảnh và QR/mã vạch trong lịch sử. Quét camera vẫn hỗ trợ zoom, kéo/đổi cỡ khung, flash, rung, âm thanh và nhãn bóng.
 - CKD luôn hỏi Lưu / Không lưu. Lưu NG chỉ ghi lịch sử, không cộng SO. Tổng các box PASS gộp theo Samsung trong cùng đơn, gồm nhiều ITEM bán. Lịch sử gắn nhãn Thiếu / Đủ / Dư; box vượt Selling Qty có cảnh báo trước khi lưu. MOQ có nhiều quy cách yêu cầu nhập số lượng box thực tế và tính lại.
 - Mỗi file CKD nhập tạo một phiên đơn hàng riêng để không làm thay đổi lịch sử đơn cũ; mã box và mã yêu cầu chống cộng lặp. Xuất lịch sử CKD ra XLSX.
+- Maker bán lấy theo ITEM trong MM, không lấy Model Vendor hay Maker của SO. So với SO Maker bằng phần tên chung, bỏ dấu/cách viết và hậu tố công ty; Maker thiếu hoặc sai báo đỏ, khớp báo xanh. MOQ có nút bút sửa số lượng.
+- Lịch sử CKD có ba tab Lượt scan / Theo Samsung / SO chưa scan. Tab chưa scan gồm các mã SO chưa có bất kỳ lượt lưu nào (kể cả NG). Lịch sử lượt quét có tải thêm; tổng theo Samsung và báo cáo tính toàn bộ dữ liệu.
+- Báo cáo Excel có ba sheet tương ứng. Có thể chọn đơn hiện tại hoặc tất cả đơn và tải ZIP chứa report.xlsx cùng toàn bộ ảnh Samsung/ITEM của các lượt đã lưu; ZIP truyền từng ảnh để tránh giữ tất cả ảnh trong RAM. Báo cáo ghi tên ảnh để đối chiếu từng lượt.
 - Holding room: nhập/xuất theo ITEM và Location, chặn tồn âm, lịch sử dùng chung.
 
 ## Yêu cầu
@@ -53,7 +56,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-42 bài kiểm tra bao gồm phân quyền, CSRF, CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, định dạng Excel, cấu hình riêng theo tài khoản, chuyển đổi dữ liệu cũ và ranh giới vùng quét.
+46 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
@@ -130,8 +133,8 @@ Giữ bản sao riêng tư ngoài VPS và kiểm tra khả năng khôi phục. D
 ## Giới hạn hiện tại
 
 - Chưa có OCR ảnh, chatbot AI hoặc bảng quy đổi AI ↔ MI cho cắt chân linh kiện.
-- CKD hiện so khớp chính xác hai barcode sau khi bỏ khoảng trắng ở hai đầu và chuyển chữ hoa; Maker phải khớp một Maker trong MM. Chưa phân tích định dạng hai nhãn khác nhau hoặc nhiều Maker.
-- Selling Q’ty hiện lấy từ MM làm mục tiêu cho từng ITEM trong mỗi phiếu/lô, chưa có nghiệp vụ đơn hàng/SO riêng.
+- CKD tra cặp Samsung / ITEM theo model list và Selling Code trong SO; Maker bán lấy từ MM Excel, hoặc MM CSV khi ITEM chưa có trong Excel. Maker thiếu không tự suy từ SO; tên có phần khớp được nhận diện, bỏ hậu tố công ty chung. Màu Maker và dữ liệu báo cáo mới giữ nguồn MM tại thời điểm lưu.
+- Selling Qty của CKD lấy từ SO, tổng gộp theo Samsung trong cùng file, tách độc lập giữa các file đơn hàng.
 - Không có service worker; hàng chờ giúp giữ lượt quét khi ứng dụng đã mở, không bảo đảm mở lại trang khi hoàn toàn mất mạng.
 - Chưa có tự đăng ký, khôi phục mật khẩu qua email, giao diện khóa người dùng hoặc thay đổi vai trò.
 - Chưa kiểm thử tải lớn hoặc mọi loại thiết bị camera.

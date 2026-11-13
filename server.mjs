@@ -1,11 +1,12 @@
+import { ckdReport } from './lib/ckd-report.mjs';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
-import { parseCSV, excel } from './lib/formats.mjs';
-import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd } from './lib/ckd.mjs';
+import { parseCSV, excel, streamZip } from './lib/formats.mjs';
+import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOverview } from './lib/ckd.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
@@ -81,7 +82,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-workbook-20261113-13' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-maker-report-20261113-14' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -171,12 +172,13 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       const ckdImage=/^\/api\/ckd\/checks\/(\d+)\/image\/(samsung|item)$/.exec(path);
       if(req.method==='GET'&&ckdImage){const image=db.prepare('SELECT mime,image FROM ckd_check_images WHERE check_id=? AND slot=?').get(Number(ckdImage[1]),ckdImage[2]);if(!image)fail(404,'Chưa có ảnh đối chiếu.');res.writeHead(200,{'Content-Type':image.mime,'Cache-Control':'no-store'});res.end(image.image);return;}
-      if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export'].includes(path)) {
-        const workbook=Number(url.searchParams.get('workbook_id'));if(!Number.isSafeInteger(workbook)||workbook<1)fail(400,'Chọn file SO.');
-        const rows=db.prepare(`SELECT c.id,c.box_ref,c.samsung,c.item_code,c.status,c.qty,c.counted,c.snapshot,c.created_at,EXISTS(SELECT 1 FROM ckd_check_images i WHERE i.check_id=c.id AND i.slot='samsung') samsung_image,EXISTS(SELECT 1 FROM ckd_check_images i WHERE i.check_id=c.id AND i.slot='item') item_image,u.name scanner FROM ckd_checks c JOIN users u ON u.id=c.user_id WHERE workbook_id=? ORDER BY c.id DESC LIMIT 5000`).all(workbook).map(r=>({...r,check:JSON.parse(r.snapshot),snapshot:undefined}));
-        if(path.endsWith('/history'))return send(res,200,{checks:rows.slice(0,200),totals:db.prepare('SELECT c.samsung,COUNT(*) boxes,SUM(c.qty) total,(SELECT SUM(selling_qty) FROM ckd_orders o WHERE o.workbook_id=c.workbook_id AND o.samsung=c.samsung) target FROM ckd_checks c WHERE c.workbook_id=? AND c.counted=1 GROUP BY c.samsung').all(workbook)});
-        const bytes=excel([['Box','Phi\u00ean qu\u00e9t','Samsung','ITEM','Kết quả','MOQ box','Cộng số lượng','Item','Description','Model Vendor','SO Maker','Selling Qty','Tổng sau box','Người quét','Thời gian UTC'],...rows.map(r=>[r.box_ref,r.check.session_name||'',r.samsung,r.item_code,r.status,r.qty,r.counted?'Có':'Không',r.check.model?.item||'',r.check.model?.description||'',r.check.model?.maker||'',r.check.order?.so_maker||'',r.check.target,r.counted?r.check.after:r.check.total,r.scanner,r.created_at])]);
-        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(bytes);return;
+      if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export','/api/ckd/report.zip'].includes(path)) {
+        const workbook=Number(url.searchParams.get('workbook_id')),all=url.searchParams.get('scope')==='all'&&path!=='/api/ckd/history';
+        if(!all&&(!Number.isSafeInteger(workbook)||workbook<1))fail(400,'Chon SO.');
+        if(path.endsWith('/history')){const report=ckdOverview(db,workbook),before=Number(url.searchParams.get('before'))||0,rows=report.checks.filter(c=>!before||c.id<before),checks=rows.slice(0,200);return send(res,200,{checks,next:rows.length>200?checks.at(-1).id:null,count:report.checks.length,summary:report.summary,unsold:report.unsold,totals:report.summary.filter(g=>g.boxes>0)});}
+        let report;try{report=ckdReport(db,all?0:workbook);}catch(e){fail(400,e.message);}
+        if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
