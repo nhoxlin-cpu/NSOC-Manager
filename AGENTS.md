@@ -10,6 +10,8 @@ Run `node --test tests/*.test.mjs` and browser checks relevant to the changed wo
 
 Every user-facing report must be ready to share with management. Use `reportWorkbook` and the shared `lib/report-layout.mjs` styles: branded title, scope, exporter, GMT+7 timestamp, numeric/date formats, column widths, frozen/filterable headings, status colors and print layout. Keep identifiers as text and preserve decimal quantities. The plain `excel` helper is for raw fixtures or data interchange, not finished reports. CKD reports include an overview; ZIP reports include relative photo links and extraction instructions.
 
+All data-export buttons produce reports, including HS, Stock, Label, CKD and Holding. Include an overview and sequential STT on record sheets; embed available scan evidence with valid drawing relationships. Show real zero quantities as 0 and retain decimal precision. Import templates (MM CSV and AI/MI XLSX) must remain machine-readable, with their original first-row columns. Verify report/image compatibility using an independent workbook reader when changing shared report packaging; do not rely only on inspecting embedded image bytes.
+
 CKD report detail columns must include STT, Samsung, ITEM, QTY, Đủ/Dư/Thiếu, Vendor, both captured images, scanner and GMT+7 scan time. Embed image previews in Excel via `lib/report-images.mjs`; keep original images in the ZIP. CKD popup codes and MOQ are edited with pencils and recalculate automatically. Do not require users to enter unique box IDs; use the request ID internally for idempotency.
 
 This repository is public. Never commit uploaded workbooks, production data, photos, databases, credentials, real environment configuration or private deployment reports.

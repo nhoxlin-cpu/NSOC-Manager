@@ -266,7 +266,7 @@ test('HS saves duplicate occurrences with stable results, simultaneous devices a
   const original=results.find(r=>r.data.prior_count===0);assert.equal((await request('/api/scans/'+original.data.id,admin,'DELETE')).status,200);
   const remaining=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.ok(remaining.every(r=>r.prior_count>0));
   const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const bytes=Buffer.from(await file.arrayBuffer());assert.ok(bytes.toString().includes('HS-SAVE-ONE'));
-  const report=XLSX.read(bytes,{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets[report.SheetNames[0]],{header:1}),head=rows.find(r=>r.includes('STT'));
+  const report=XLSX.read(bytes,{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets['Chi tiết'],{header:1}),head=rows.find(r=>r.includes('STT'));
   assert.ok(head.indexOf('ITEM')<head.indexOf('Barcode'));assert.ok(head.indexOf('Barcode')<head.indexOf('Người quét'));
 });
 
@@ -333,7 +333,7 @@ test('CKD pair routes enforce authentication, CSRF and roles; history and export
   const exported=await fetch(base+'/api/ckd/export?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(exported.status,200);const reportBytes=Buffer.from(await exported.arrayBuffer());assert.match(reportBytes.toString(),/Test description/);
   const report=XLSX.read(reportBytes,{type:'buffer',cellDates:true}),detail=report.Sheets['Luot scan'],head=XLSX.utils.sheet_to_json(detail,{header:1})[6];
   for(const column of ['STT','Samsung','ITEM','QTY','Bán đủ / dư / thiếu','Vendor','Ảnh Samsung','Ảnh ITEM','Người scan','Giờ scan (GMT+7)'])assert.ok(head.includes(column),column);
-  assert.equal(detail.A8.v,1);assert.equal(detail.D8.v,100);assert.equal(detail.E8.v,'Đủ');assert.equal(detail.F8.v,'V');assert.ok(detail.J8.v instanceof Date);assert.match(reportBytes.toString(),/xl\/media\/report-2-1.png/);assert.ok(!head.includes('Box'));
+  assert.equal(detail.A8.v,1);assert.equal(detail.D8.v,100);assert.equal(detail.E8.v,'Đủ');assert.equal(detail.F8.v,'V');assert.ok(detail.J8.v instanceof Date);assert.match(reportBytes.toString(),/xl\/media\/report2image1.png/);assert.ok(!head.includes('Box'));
   const archive=await fetch(base+'/api/ckd/report.zip?workbook_id='+w.id,{headers:{Cookie:viewer.cookie}});assert.equal(archive.status,200);assert.equal(archive.headers.get('content-type'),'application/zip');const zipped=Buffer.from(await archive.arrayBuffer());assert.equal(zipped.readUInt32LE(0),0x04034b50);assert.match(zipped.toString(),/report.xlsx/);assert.match(zipped.toString(),/check-\d+-samsung.png/);assert.match(zipped.toString(),/check-\d+-item.png/);assert.match(zipped.toString(),/SO chua scan/);
   assert.equal((await request('/api/ckd/report.zip?scope=all')).status,401);
   assert.equal((await request('/api/ckd/import',viewer,'POST',{name:'bad.xlsx',file:'invalid'})).status,403);

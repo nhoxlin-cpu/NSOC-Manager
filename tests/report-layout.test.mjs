@@ -15,6 +15,7 @@ test('reports have print layout, frozen headings, filters, alternating rows and 
   const sheet=renderReportSheet({name:'Chi tiết',rows},0,meta).xml;
   for(const pattern of [/ySplit="7"/,/xSplit="2"/,/showGridLines="0"/,/autoFilter ref="A7:F9"/,/orientation="landscape"/,/pageMargins/,/Trang &amp;P/,/mergeCell ref="A2:F2"/,/s="10"/,/s="11"/,/customWidth="1"/])assert.match(sheet,pattern);
   assert.match(reportStyles,/#,##0/);assert.match(reportStyles,/dd\/mm\/yyyy hh:mm/);
+  assert.match(reportStyles,/#,##0\.#########;\[Red\]\(#,##0\.#########\);0/);
   const book=reportWorkbook([{name:'Chi tiết',rows}],meta).toString();assert.match(book,/_xlnm.Print_Titles/);assert.match(book,/docProps\/core.xml/);assert.match(book,/xl\/styles.xml/);
 });
 test('empty sheets stay present and photo links only point to safe relative ZIP paths',()=>{
@@ -24,6 +25,6 @@ test('empty sheets stay present and photo links only point to safe relative ZIP 
 test('report photo cells embed thumbnails into the workbook with drawing relationships',()=>{
   const image=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOuIAAAAASUVORK5CYII=','base64');
   const bytes=reportWorkbook([{name:'Ảnh scan',rows:[['STT','Ảnh Samsung'],[1,'Ảnh scan']],images:[{row:8,col:1,data:image,mime:'image/png',alt:'Samsung'}]}],meta);
-  const raw=bytes.toString();for(const pattern of [/xl\/media\/report-1-1.png/,/drawing1.xml/,/oneCellAnchor/,/rIdDrawing/,/rId1/])assert.match(raw,pattern);assert.ok(bytes.includes(image));
+  const raw=bytes.toString();for(const pattern of [/xl\/media\/report1image1.png/,/drawing1.xml/,/oneCellAnchor/,/rIdDrawing/,/rId1/])assert.match(raw,pattern);assert.ok(bytes.includes(image));
   const book=XLSX.read(bytes,{type:'buffer'});assert.equal(book.Sheets['Ảnh scan'].A8.v,1);
 });

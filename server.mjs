@@ -1,3 +1,4 @@
+import {scanReport} from './lib/scan-report.mjs';
 import { ckdReport } from './lib/ckd-report.mjs';
 import { hsCode } from './public/hs-code.js';
 import { createServer } from 'node:http';
@@ -94,7 +95,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'hs-bulk-20261114-29' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'reports-20261114-30' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -355,21 +356,17 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'GET' && path === '/api/export' && url.searchParams.get('kind')==='holding') {const bytes=holdingReport(db,{},u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename=work-area-holding.xlsx'});return res.end(bytes);}
       if (req.method === 'GET' && path === '/api/export') {
-        const kind = url.searchParams.get('kind') || 'scans'; let rows;
-        if (kind === 'scans') {
-          const mode=scanMode(),data=db.prepare(`${scanSelect} WHERE (? IS NULL OR s.mode=?) ORDER BY s.id DESC`).all(mode,mode);
-          rows=mode==='HS'?[['STT','ITEM','Barcode','Kết quả','Người quét','Thời gian UTC'],...data.map((r,i)=>[i+1,r.item_code||r.barcode,r.barcode,r.prior_count>0?'Trùng':'Không trùng',r.scanner,r.created_at])]:[['STT','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM code','Item NM','Số lượng (QTY)','Maker','Vendor','Lot No'],...data.map((r,i)=>[i+1,r.barcode,r.mode,r.scanner,r.created_at,r.item_code||'Chưa có trong MM',r.item_name||'',r.quantity??'',r.maker||'',r.vendor||'',r.lot_no||''])];
+        const kind=url.searchParams.get('kind')||'scans';
+        if(kind==='scans'){
+          const mode=scanMode(),data=db.prepare(`${scanSelect} WHERE (? IS NULL OR s.mode=?) ORDER BY s.id DESC`).all(mode,mode),buffer=scanReport(db,data,mode,u);
+          res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':`attachment; filename="work-area-${mode?mode.toLowerCase():'scans'}-report.xlsx"`});return res.end(buffer);
         }
-        else if (kind === 'boxes') rows = [['Phiếu/lô','Box','ITEM','Số lượng','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'], ...db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all().map(r => [r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])];
-        else if (kind === 'holding') rows = [['ITEM','Location','Số lượng thay đổi','Ghi chú','Người thao tác','Thời gian UTC'], ...db.prepare('SELECT m.*,u.name FROM movements m JOIN users u ON u.id=m.user_id ORDER BY m.id DESC').all().map(r => [r.item_code,r.location,r.qty,r.note,r.name,r.created_at])];
-        else fail(400, 'Loại báo cáo không hợp lệ.');
-        const label=kind==='scans'?'Lịch sử quét mã':kind==='holding'?'Giao dịch Holding':'Xác nhận box';
-        const mode=kind==='scans'?(url.searchParams.get('mode')||'Tất cả loại quét'):'';
-        const sheets=[{name:'Chi tiết',title:label,rows}];
-        if(kind==='scans'&&mode==='Stock')sheets.unshift({name:'Total theo ITEM',title:'TỔNG QTY STOCK THEO ITEM',rows:[['STT','ITEM code','Item NM','Số lượt quét','Lượt có QTY','Total QTY'],...stockSummary().map((r,i)=>[i+1,r.item_code,r.item_name||'',r.scans,r.quantity_count,r.total_quantity??''])]});
-        const buffer=reportWorkbook(sheets,{title:'BÁO CÁO '+(kind==='scans'?'QUÉT MÃ':kind==='holding'?'HOLDING':'XÁC NHẬN BOX'),scope:mode,exportedBy:u.name});
-        res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="work-area-${kind}.xlsx"` }); return res.end(buffer);
+        if(kind!=='boxes')fail(400,'Loại báo cáo không hợp lệ.');
+        const data=db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all();
+        const sheets=[{name:'Tổng quan',title:'TỔNG QUAN XÁC NHẬN BOX',rows:[['Chỉ tiêu','Giá trị'],['Box đã xác nhận',data.length],['Tổng QTY',data.reduce((n,r)=>n+r.qty,0)]]},{name:'Chi tiết',title:'CHI TIẾT XÁC NHẬN BOX',rows:[['STT','Phiếu / lô','Box','ITEM','QTY','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'],...data.map((r,i)=>[i+1,r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])]}];
+        const buffer=reportWorkbook(sheets,{title:'BÁO CÁO XÁC NHẬN BOX',scope:'Toàn bộ lịch sử xác nhận box',exportedBy:u.name});res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-boxes-report.xlsx"'});return res.end(buffer);
       }
+
       function checkBox(b) {
         const labelA = norm(text(b.label_a, 'Nhãn Samsung', 500)), labelB = norm(text(b.label_b, 'Nhãn đối chiếu', 500));
         const itemCode = norm(text(b.item_code, 'ITEM')), delivery = norm(text(b.delivery, 'Phiếu/lô'));
