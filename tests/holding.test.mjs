@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {openDatabase} from '../lib/db.mjs';
-import {initHolding,importHolding,holdingLookup,holdingReference,holdingPreferences,receiveHolding,withdrawHolding,editHolding,holdingInventory,holdingEvents,holdingReport} from '../lib/holding.mjs';
+import {initHolding,importHolding,holdingLookup,holdingReference,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from '../lib/holding.mjs';
 import {parseMMWorkbook} from '../lib/mm-workbook.mjs';
 import XLSX from '../lib/vendor/sheetjs-0.20.3.cjs';
 import {createApp} from '../server.mjs';
@@ -63,6 +63,32 @@ test('Holding migration backfills legacy audit snapshots once without resetting 
  const saved=db.prepare('SELECT snapshot FROM holding_events ORDER BY id').all();initHolding(db);assert.deepEqual(db.prepare('SELECT snapshot FROM holding_events ORDER BY id').all(),saved);
  }finally{db.close();}
 });
+test('Holding ITEM group edits change only selected box metadata and are idempotent across retries',()=>{
+ const db=setup();try{for(let i=0;i<3;i++)receiveHolding(db,receive({barcode:'GROUP-'+i}),1);
+ const all=holdingInventory(db).entries,body={request_id:randomUUID(),item_code:'000123',rows:all.slice(0,2).map(r=>({id:r.id,expected_revision:r.revision})),changes:{item_code:'NEW-ITEM',location:'b-02'},reason:'Move selected boxes'};
+ const result=editHoldingGroup(db,body,2);assert.equal(result.updated,2);assert.equal(result.unchanged,0);assert.equal(holdingInventory(db).totals.qty,31.5);assert.equal(holdingInventory(db).totals.boxes,3);
+ const items=holdingInventory(db).items;assert.equal(items.find(r=>r.item_code==='NEW-ITEM').qty,21);assert.equal(items.find(r=>r.item_code==='000123').boxes,1);assert.ok(holdingInventory(db).entries.filter(r=>r.item_code==='NEW-ITEM').every(r=>r.location==='B-02'&&r.initial_qty===10.5&&r.remaining_qty===10.5));
+ assert.equal(editHoldingGroup(db,{...body,rows:[...body.rows].reverse()},2).duplicate,true);assert.equal(holdingEvents(db).filter(r=>r.direction==='edit').length,2);assert.throws(()=>editHoldingGroup(db,{...body,reason:'Different request'},2),/lượt sửa khác/);assert.throws(()=>editHoldingGroup(db,body,1));
+ assert.equal(holdingEvents(db).filter(r=>r.direction==='in'&&r.item_code==='000123').length,3);
+ }finally{db.close();}
+});
+test('Holding ITEM group edits reject stale/mixed membership and skip already-matching boxes',()=>{
+ const db=setup();try{receiveHolding(db,receive({barcode:'GROUP-1',location:'B-02'}),1);receiveHolding(db,receive({barcode:'GROUP-2'}),1);receiveHolding(db,receive({barcode:'OTHER',item_code:'OTHER-ITEM'}),1);const entries=holdingInventory(db).entries.filter(r=>r.item_code==='000123'),body={request_id:randomUUID(),item_code:'000123',rows:entries.map(r=>({id:r.id,expected_revision:r.revision})),changes:{location:'B-02'},reason:'Move bin'};
+ const result=editHoldingGroup(db,body,1);assert.equal(result.updated,1);assert.equal(result.unchanged,1);
+ assert.throws(()=>editHoldingGroup(db,{...body,request_id:randomUUID()},1),/Một box đã thay đổi/);
+ const fresh=holdingInventory(db).entries,original=fresh.filter(r=>r.item_code==='000123'),other=fresh.find(r=>r.item_code==='OTHER-ITEM'),validRows=original.map(r=>({id:r.id,expected_revision:r.revision}));
+ assert.throws(()=>editHoldingGroup(db,{...body,request_id:randomUUID(),rows:[validRows[0],{id:other.id,expected_revision:other.revision}]},1),/không còn thuộc ITEM/);
+ assert.throws(()=>editHoldingGroup(db,{...body,request_id:randomUUID(),rows:[validRows[0],validRows[0]]},1),/bị trùng/);
+ assert.throws(()=>editHoldingGroup(db,{...body,request_id:randomUUID(),rows:validRows,changes:{remaining_qty:0}},1),/Chỉ sửa chung/);
+ const noop=editHoldingGroup(db,{...body,request_id:randomUUID(),rows:validRows},1);assert.equal(noop.updated,0);assert.equal(noop.unchanged,2);assert.equal(holdingEvents(db).filter(r=>r.direction==='edit').length,1);
+ }finally{db.close();}
+});
+test('Holding ITEM group transaction rolls back earlier changes if a later box update fails',()=>{
+ const db=setup();try{receiveHolding(db,receive({barcode:'GROUP-1'}),1);receiveHolding(db,receive({barcode:'GROUP-2'}),1);const entries=holdingInventory(db).entries.sort((a,b)=>a.id-b.id),body={request_id:randomUUID(),item_code:'000123',rows:entries.map(r=>({id:r.id,expected_revision:r.revision})),changes:{location:'B-02'},reason:'Atomic move'};
+ db.exec(`CREATE TRIGGER reject_group_update BEFORE UPDATE ON holding_entries WHEN OLD.id=${entries[1].id} BEGIN SELECT RAISE(ABORT,'test failure'); END;`);assert.throws(()=>editHoldingGroup(db,body,1));assert.ok(holdingInventory(db).entries.every(r=>r.location==='A-01'&&r.revision===0));assert.equal(holdingEvents(db).length,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM holding_group_edits').get().n,0);
+ db.exec('DROP TRIGGER reject_group_update');assert.equal(editHoldingGroup(db,body,1).updated,2);assert.equal(holdingEvents(db).length,4);
+ }finally{db.close();}
+});
 test('Holding HTTP upload is admin-only and CSRF protected; lookup, images, exports and preferences remain authenticated',async()=>{
  const db=setup();db.prepare("INSERT INTO users(id,username,name,password,role) VALUES(3,'v','Viewer','unused','viewer')").run();const server=await createApp({db});await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  const sessions=[null,...[1,2,3].map(id=>issueSession(db,id))];const request=(path,user=1,method='GET',body,extra={})=>fetch(base+'/api/holding/v2/'+path,{method,headers:{...(user?{Cookie:'wa_session='+sessions[user].token,'X-CSRF-Token':sessions[user].csrf}:{}),...(body?{'Content-Type':'application/json'}:{}),...extra},body:body?JSON.stringify(body):undefined});
@@ -76,5 +102,7 @@ test('Holding HTTP upload is admin-only and CSRF protected; lookup, images, expo
  assert.equal((await request('withdraw',3,'POST',{request_id:randomUUID(),entry_id:saved.id,qty:1,reason:'No access'})).status,403);
  const current=(await (await request('inventory')).json()).entries[0],edit={...current,entry_id:saved.id,request_id:randomUUID(),expected_revision:current.revision,location:'C-03',remaining_qty:9,reason:'Correction'};
  assert.equal((await request('edit',3,'POST',edit)).status,403);assert.equal((await request('edit',2,'POST',edit,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await request('edit',2,'POST',edit)).status,200);assert.equal((await (await request('events',3)).json()).events[0].direction,'edit');
+ const latest=(await (await request('inventory')).json()).entries[0],group={request_id:randomUUID(),item_code:latest.item_code,rows:[{id:latest.id,expected_revision:latest.revision}],changes:{location:'D-04'},reason:'Group move'};
+ assert.equal((await request('edit-group',0,'POST',group)).status,401);assert.equal((await request('edit-group',3,'POST',group)).status,403);assert.equal((await request('edit-group',2,'POST',group,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await request('edit-group',2,'POST',group)).status,200);assert.equal((await (await request('inventory')).json()).entries[0].remaining_qty,9);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));db.close();}
 });

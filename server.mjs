@@ -15,7 +15,7 @@ import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
 import { importMMRows,listMM } from './lib/mm-data.mjs';
 import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
 import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
-import {initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
+import {initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -95,7 +95,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'holding-edit-20261114-31' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'holding-item-edit-20261114-32' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -138,6 +138,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(req.method==='POST'&&action==='receive'){writeAccess(u);const b=await jsonBody(req);return send(res,201,receiveHolding(db,b,u.id,imageData(b.image)));}
         if(req.method==='POST'&&action==='withdraw'){writeAccess(u);return send(res,200,withdrawHolding(db,await jsonBody(req),u.id));}
         if(req.method==='POST'&&action==='edit'){writeAccess(u);return send(res,200,editHolding(db,await jsonBody(req),u.id));}
+        if(req.method==='POST'&&action==='edit-group'){writeAccess(u);return send(res,200,editHoldingGroup(db,await jsonBody(req),u.id));}
         if(req.method==='POST'&&action==='import'){
           adminAccess(u);let name;try{name=decodeURIComponent(req.headers['x-mm-file-name']||'');}catch{fail(400,'Tên file không hợp lệ.');}name=text(name,'Tên file',200);if(!/\.(xls|xlsx)$/i.test(name))fail(400,'Chọn file .xls hoặc .xlsx.');
           const bytes=await workbookBody(req,'Holding');let parsed;try{parsed=await parseMMInWorker(bytes);}catch(e){fail(400,e.message);}return send(res,200,importHolding(db,parsed,name,query.kind,u.id));
