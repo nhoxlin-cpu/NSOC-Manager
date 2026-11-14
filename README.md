@@ -164,3 +164,11 @@ Bộ đọc SheetJS CE 0.20.3 được vendored tại lib/vendor, kèm giấy ph
 Giao diện gửi Excel trực tiếp dạng nhị phân, không chuyển sang JSON/base64. Backend cho tối đa 5 phút nhận request (header vẫn 15 giây); giao diện chờ tối đa 7 phút cho tải lên và xử lý. Giới hạn file vẫn 32 MB, chỉ admin và có CSRF hợp lệ mới được nhập. Endpoint JSON cũ vẫn tương thích.
 
 Phản hồi rỗng hoặc không phải JSON (ví dụ timeout 408 / proxy 502) được đổi thành thông báo rõ ràng thay cho lỗi parse JSON. Có bài kiểm tra truyền file chậm vượt ngưỡng 30 giây cũ, cùng kiểm tra định dạng, tên file và phân quyền của endpoint nhận nhị phân.
+
+### Cắt chân linh kiện — AI / MI
+
+Mở **Cắt chân** để quét mã và tra đúng cặp **AI 1st ↔ MI 1st**, **AI 2nd ↔ MI 2nd** theo hai chiều. Nếu một mã có nhiều kết quả, hệ thống hiện từng model, Maker, BOM QTY và Location để đối chiếu; có bộ lọc model và chiều quy đổi. Mã đích có thể hiện bằng QR / Code128.
+
+Quản trị viên nhập Excel gốc `.xls` / `.xlsx` tối đa 32 MB tại **Nhập bảng quy đổi AI / MI**, hoặc tải file mẫu tại đây. Đọc tất cả sheet, hỗ trợ tiêu đề nhóm MI CODE / AI CODE, ô model gộp và phần chữ ký VN MANAGER. Sheet không nhận diện hoặc cặp thiếu một mã làm toàn bộ lần nhập thất bại. Giữ mã dạng Text để bảo toàn số 0 đầu. Không tạo dữ liệu quy đổi từ ảnh chụp.
+
+Lịch sử quy đổi tách riêng, lưu kết quả tại thời điểm quét, người quét và ảnh khi bật nút camera. Nhập bảng mới không đổi lịch sử cũ. Admin / inspector lưu lượt; viewer chỉ tra cứu. Cần kết nối server; lỗi mạng hiện thông báo để thử lại, cùng yêu cầu không lưu trùng. BOM QTY là thông tin tham khảo, không phải số lượng đã cắt.

@@ -348,6 +348,22 @@ test('raw MM upload remains open beyond the previous 30-second request deadline'
   assert.equal(result.status,200);assert.equal(JSON.parse(result.body).count,1);
 });
 
+test('cutting conversion import, role boundaries, exact pairs, evidence and separate history',async()=>{
+ const ws=XLSX.utils.aoa_to_sheet([['Model Code','MI 1st','AI 1st','MI 2nd','AI 2nd'],['MODEL-TEST','MI-TEST-1','AI-TEST-1','MI-TEST-2','AI-TEST-2']]);const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,ws,'Pairs');const bytes=XLSX.write(wb,{type:'buffer',bookType:'xlsx'});
+ assert.equal((await request('/api/cutting/status')).status,401);
+ assert.equal((await request('/api/cutting/scans',viewer,'POST',{request_id:randomUUID(),code:'AI-TEST-1'})).status,403);
+ const upload=async session=>{const res=await fetch(base+'/api/cutting/import-file',{method:'POST',headers:{Cookie:session.cookie,'X-CSRF-Token':session.csrf,'Content-Type':'application/octet-stream','X-MM-File-Name':'fixture.xlsx'},body:bytes});return {status:res.status,data:await res.json()};};
+ assert.equal((await upload(inspector)).status,403);const imported=await upload(admin);assert.equal(imported.status,201);assert.equal(imported.data.pairs,2);
+ const lookup=await request('/api/cutting/lookup?code=AI-TEST-2',viewer);assert.equal(lookup.status,200);assert.equal(lookup.data.matches[0].target_code,'MI-TEST-2');assert.equal(lookup.data.matches[0].variant,2);
+ const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jH3sAAAAASUVORK5CYII=';
+ const body={request_id:randomUUID(),code:'MI-TEST-1',image};const saved=await request('/api/cutting/scans',inspector,'POST',body);assert.equal(saved.status,201);assert.equal(saved.data.matches[0].target_code,'AI-TEST-1');
+ assert.equal((await request('/api/cutting/scans',inspector,'POST',body)).data.id,saved.data.id);assert.equal((await request('/api/cutting/scans',admin,'POST',body)).status,409);
+ const hist=await request('/api/cutting/scans',viewer);assert.equal(hist.data.total,1);assert.equal(hist.data.scans[0].scanner,'inspector');
+ assert.equal((await request('/api/cutting/scans/'+saved.data.id,viewer)).data.matches[0].target_code,'AI-TEST-1');
+ assert.equal((await request('/api/cutting/scans/'+saved.data.id+'/image')).status,401);assert.equal((await request('/api/cutting/scans/'+saved.data.id+'/image',viewer)).status,200);
+ assert.equal((await request('/cutting.js')).status,200);assert.equal((await request('/cutting.css')).status,200);
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);

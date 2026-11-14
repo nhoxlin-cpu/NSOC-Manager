@@ -147,7 +147,7 @@ export class PhoneScanner {
     const ratio=Math.min(1,960/w); const width=Math.max(1,Math.round(w*ratio)),height=Math.max(1,Math.round(h*ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width=width; this.canvas.height=height; }
     this.context.drawImage(this.video,x,y,w,h,0,0,width,height);
-    if(this.options.autoCapture && !this.options.onCode){
+    if(this.options.autoCapture && (!this.options.onCode||this.options.captureOnCode)){
       const scale=Math.min(1,1280/Math.max(this.video.videoWidth,this.video.videoHeight));
       this.evidenceCanvas.width=Math.round(this.video.videoWidth*scale);this.evidenceCanvas.height=Math.round(this.video.videoHeight*scale);
       this.evidenceCanvas.getContext('2d').drawImage(this.video,0,0,this.evidenceCanvas.width,this.evidenceCanvas.height);
@@ -170,7 +170,7 @@ export class PhoneScanner {
         this.candidateTime=Date.now();
         if (this.hits>=2 && value !== this.latched) {
           this.latched=value;
-          const image=this.options.autoCapture&&!this.options.onCode?this.evidenceCanvas.toDataURL('image/jpeg',.8):null;
+          const image=this.options.autoCapture&&(!this.options.onCode||this.options.captureOnCode)?this.evidenceCanvas.toDataURL('image/jpeg',.8):null;
           await this.accept(value,false,image);
         }
       } else if(Date.now()-(this.candidateTime||0)>1800) { this.candidate=''; this.hits=0; }
@@ -187,11 +187,11 @@ export class PhoneScanner {
     this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
     const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:this.options.mode!=='HS'&&!force};
     try {
-      if(this.options.autoCapture && !this.options.onCode){
+      if(this.options.autoCapture && (!this.options.onCode||this.options.captureOnCode)){
         if(!this.lastImage)throw Error('Chưa chụp được ảnh đối chiếu. Hãy đưa mã vào khung và quét lại.');
         payload.image=this.lastImage;
       }
-      if(this.options.onCode){const result=await this.options.onCode(code);this.captured++;this.paint('success',result?.message||'Đã điền mã vào mục đã chọn',code);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(false);return;}
+      if(this.options.onCode){const result=await this.options.onCode(code,{image:payload.image});this.captured++;const kind=result?.kind||'success';this.paint(kind,result?.message||'Đã điền mã vào mục đã chọn',result?.displayValue||code);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(kind==='error');return;}
       let known=0, online=true;
       const local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && clean(r.barcode) === code).length;
       try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
