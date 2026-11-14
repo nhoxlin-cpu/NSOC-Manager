@@ -2,7 +2,7 @@ import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
 import {openDatabase} from '../lib/db.mjs';
-import {initHolding,importHolding,holdingLookup,holdingReference,holdingPreferences,receiveHolding,withdrawHolding,holdingInventory,holdingEvents,holdingReport} from '../lib/holding.mjs';
+import {initHolding,importHolding,holdingLookup,holdingReference,holdingPreferences,receiveHolding,withdrawHolding,editHolding,holdingInventory,holdingEvents,holdingReport} from '../lib/holding.mjs';
 import {parseMMWorkbook} from '../lib/mm-workbook.mjs';
 import XLSX from '../lib/vendor/sheetjs-0.20.3.cjs';
 import {createApp} from '../server.mjs';
@@ -38,6 +38,31 @@ test('ITEM totals include all pages; filters, counts and four-sheet report agree
 test('location preferences are per user and persist independently from auto-save',()=>{
  const db=setup();try{holdingPreferences(db,1,{location:'A-01',auto_save:false});assert.deepEqual(holdingPreferences(db,2),{location:'',auto_save:true});receiveHolding(db,receive({location:'B-02'}),1);assert.deepEqual(holdingPreferences(db,1),{location:'B-02',auto_save:false});assert.throws(()=>receiveHolding(db,receive({barcode:'NEW',qty:1e-8}),1));}finally{db.close();}
 });
+test('Holding edits update current totals and retain immutable before/after and original receipt metadata',()=>{
+ const db=setup();try{const received=receiveHolding(db,receive(),1);withdrawHolding(db,{request_id:randomUUID(),entry_id:received.id,qty:.5,reason:'Production'},1);
+ const current=holdingInventory(db).entries[0],body={...current,entry_id:current.id,expected_revision:current.revision,request_id:randomUUID(),barcode:'P-BOX-EDIT',item_code:'NEW-ITEM',item_name:'New part',location:'B-02',remaining_qty:12.5,vendor:'New vendor',lot_no:'0009',reason:'Count correction'};
+ const updated=editHolding(db,body,2);assert.equal(updated.balance,12.5);assert.equal(editHolding(db,body,2).duplicate,true);
+ const inventory=holdingInventory(db);assert.equal(inventory.totals.boxes,1);assert.equal(inventory.items[0].item_code,'NEW-ITEM');assert.equal(inventory.items[0].qty,12.5);assert.equal(inventory.entries[0].initial_qty,10.5);assert.equal(holdingPreferences(db,1).location,'A-01');
+ const events=holdingEvents(db),change=events[0];assert.equal(events.length,3);assert.equal(change.direction,'edit');assert.equal(change.qty,2.5);assert.equal(change.scanner,'User B');assert.equal(change.before.remaining_qty,10);assert.equal(change.after.remaining_qty,12.5);assert.match(change.changes,/Barcode: P-BOX-1 → P-BOX-EDIT/);
+ assert.equal(events.find(r=>r.direction==='in').barcode,'P-BOX-1');assert.equal(events.find(r=>r.direction==='out').location,'A-01');assert.equal(holdingEvents(db,{q:'P-BOX-1'}).length,2);
+ const report=XLSX.read(holdingReport(db,{}, {name:'QA'}),{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets['Nhật ký'],{header:1});assert.ok(rows.some(r=>r.includes('Điều chỉnh')&&r.includes('Count correction')&&r.includes(2.5)));assert.ok(rows.some(r=>r.includes('P-BOX-1')&&r.includes('Production')));
+ }finally{db.close();}
+});
+test('Holding edits reject duplicate barcodes and stale versions and allow an audited zero-stock correction',()=>{
+ const db=setup();try{const received=receiveHolding(db,receive(),1);receiveHolding(db,receive({barcode:'OTHER-BOX'}),1);const current=holdingInventory(db).entries.find(r=>r.id===received.id),body={...current,entry_id:current.id,expected_revision:current.revision,request_id:randomUUID(),remaining_qty:2,reason:'Count correction'};
+ assert.throws(()=>editHolding(db,{...body,barcode:'OTHER-BOX'},2),/box khác/);assert.equal(holdingInventory(db).totals.qty,21);
+ withdrawHolding(db,{request_id:randomUUID(),entry_id:current.id,qty:1,reason:'Issue'},1);assert.throws(()=>editHolding(db,body,2),/thay đổi/);assert.throws(()=>withdrawHolding(db,{request_id:randomUUID(),entry_id:current.id,expected_revision:0,qty:1,reason:'Stale issue'},1),/thay đổi/);
+ const fresh=holdingInventory(db).entries.find(r=>r.id===received.id),zero={...body,expected_revision:fresh.revision,remaining_qty:0,request_id:randomUUID()};assert.equal(editHolding(db,zero,2).balance,0);assert.equal(holdingInventory(db).totals.boxes,1);assert.equal(editHolding(db,zero,2).duplicate,true);assert.throws(()=>editHolding(db,zero,1));
+ assert.throws(()=>editHolding(db,{...zero,request_id:randomUUID()},2),/xuất hết/);assert.notEqual(receiveHolding(db,receive(),1).id,received.id);
+ }finally{db.close();}
+});
+test('Holding migration backfills legacy audit snapshots once without resetting stock',()=>{
+ const db=setup();try{const received=receiveHolding(db,receive(),1);withdrawHolding(db,{request_id:randomUUID(),entry_id:received.id,qty:.5,reason:'Old issue'},1);
+ db.exec('ALTER TABLE holding_events DROP COLUMN snapshot; ALTER TABLE holding_events DROP COLUMN before_snapshot; ALTER TABLE holding_entries DROP COLUMN revision;');initHolding(db);
+ const events=holdingEvents(db);assert.equal(events.length,2);assert.equal(events[0].before.remaining_qty,10.5);assert.equal(events[0].after.remaining_qty,10);assert.equal(events[1].after.remaining_qty,10.5);assert.equal(holdingInventory(db).totals.qty,10);
+ const saved=db.prepare('SELECT snapshot FROM holding_events ORDER BY id').all();initHolding(db);assert.deepEqual(db.prepare('SELECT snapshot FROM holding_events ORDER BY id').all(),saved);
+ }finally{db.close();}
+});
 test('Holding HTTP upload is admin-only and CSRF protected; lookup, images, exports and preferences remain authenticated',async()=>{
  const db=setup();db.prepare("INSERT INTO users(id,username,name,password,role) VALUES(3,'v','Viewer','unused','viewer')").run();const server=await createApp({db});await new Promise(r=>server.listen(0,'127.0.0.1',r));const base='http://127.0.0.1:'+server.address().port;
  const sessions=[null,...[1,2,3].map(id=>issueSession(db,id))];const request=(path,user=1,method='GET',body,extra={})=>fetch(base+'/api/holding/v2/'+path,{method,headers:{...(user?{Cookie:'wa_session='+sessions[user].token,'X-CSRF-Token':sessions[user].csrf}:{}),...(body?{'Content-Type':'application/json'}:{}),...extra},body:body?JSON.stringify(body):undefined});
@@ -49,5 +74,7 @@ test('Holding HTTP upload is admin-only and CSRF protected; lookup, images, expo
  assert.equal((await request('entries/'+saved.id+'/image',3)).status,200);assert.equal((await request('export',3)).status,200);assert.equal((await request('preferences',3,'POST',{location:'A-99'})).status,403);
  await request('preferences',2,'POST',{location:'B-01',auto_save:false});assert.deepEqual(await (await request('preferences',2)).json(),{location:'B-01',auto_save:false});assert.equal((await (await request('preferences',1)).json()).location,'');
  assert.equal((await request('withdraw',3,'POST',{request_id:randomUUID(),entry_id:saved.id,qty:1,reason:'No access'})).status,403);
+ const current=(await (await request('inventory')).json()).entries[0],edit={...current,entry_id:saved.id,request_id:randomUUID(),expected_revision:current.revision,location:'C-03',remaining_qty:9,reason:'Correction'};
+ assert.equal((await request('edit',3,'POST',edit)).status,403);assert.equal((await request('edit',2,'POST',edit,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await request('edit',2,'POST',edit)).status,200);assert.equal((await (await request('events',3)).json()).events[0].direction,'edit');
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));db.close();}
 });
