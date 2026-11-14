@@ -1,4 +1,5 @@
 import { ckdReport } from './lib/ckd-report.mjs';
+import { hsCode } from './public/hs-code.js';
 import { createServer } from 'node:http';
 import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
@@ -84,14 +85,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'cutting-ai-mi-20261114-1' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'hs-focus-20261114-19' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -272,7 +273,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         });
         return send(res, 200, { count: checked.length });
       }
-      const scanSelect = `SELECT s.id,s.barcode,s.mode,s.quantity,s.prior_count,s.created_at,u.name AS scanner,COALESCE(ss.item_code,m.item_code) AS item_code,COALESCE(ss.item_name,m.item) AS item_name,COALESCE(ss.maker,m.maker) AS maker,COALESCE(ss.vendor,m.vendor) AS vendor,ss.lot_no,ss.quantity_source,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN scan_stock ss ON ss.scan_id=s.id LEFT JOIN materials m ON m.item_code=COALESCE((SELECT item_code FROM materials WHERE samsung=s.barcode),s.barcode)`;
+      const scanSelect = `SELECT s.id,s.barcode,s.raw_barcode,s.mode,s.quantity,s.prior_count,s.created_at,u.name AS scanner,COALESCE(ss.item_code,m.item_code) AS item_code,COALESCE(ss.item_name,m.item) AS item_name,COALESCE(ss.maker,m.maker) AS maker,COALESCE(ss.vendor,m.vendor) AS vendor,ss.lot_no,ss.quantity_source,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN scan_stock ss ON ss.scan_id=s.id LEFT JOIN materials m ON m.item_code=COALESCE((SELECT item_code FROM materials WHERE samsung=s.barcode),s.barcode)`;
       const stockInfo=id=>db.prepare(`${scanSelect} WHERE s.id=?`).get(id);
       const scanCount=(barcode,mode)=>db.prepare('SELECT COUNT(*) n FROM scans WHERE barcode=? AND mode=?').get(barcode,mode).n;
       const scanMode=()=>{
@@ -281,7 +282,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return mode;
       };
       if (req.method === 'GET' && path === '/api/scans/check') {
-        const barcode=norm(text(url.searchParams.get('barcode'),'Barcode',500)),mode=url.searchParams.get('mode');
+        const mode=url.searchParams.get('mode'),raw=norm(text(url.searchParams.get('barcode'),'Barcode',500)),barcode=mode==='HS'?hsCode(raw):raw;
         if (!['HS','Stock','Label'].includes(mode)) fail(400,'Loại quét không hợp lệ.');
         return send(res,200,{barcode,mode,count:scanCount(barcode,mode),scope:'server'});
       }
@@ -296,14 +297,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         writeAccess(u); const b = await jsonBody(req), id = requestId(b.request_id);
         const previous = db.prepare('SELECT id,user_id,barcode,mode,prior_count FROM scans WHERE request_id=?').get(id);
         if (previous) { if (previous.user_id !== u.id) fail(409, 'Mã yêu cầu đã tồn tại.'); return send(res, 200, { id: previous.id, duplicate: true,is_duplicate:previous.prior_count>0,prior_count:previous.prior_count,barcode_count:scanCount(previous.barcode,previous.mode),stock:previous.mode==='Stock'?stockInfo(previous.id):null }); }
-        const barcode = norm(text(b.barcode, 'Barcode', 500));
+        const rawBarcode=norm(text(b.mode==='HS'?(b.raw_barcode??b.barcode):b.barcode,'Barcode',500)),barcode=b.mode==='HS'?hsCode(rawBarcode):rawBarcode;
         if (!['HS','Stock','Label'].includes(b.mode)) fail(400, 'Loại quét không hợp lệ.');
         const image = imageData(b.image);
         const result=transaction(db,()=>{
           const before=scanCount(barcode,b.mode);
           if (b.mode!=='HS' && b.reject_duplicate === true && before>0) return {blocked:true,count:before};
           const stock=b.mode==='Stock'?stockData(db,barcode):null;
-          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity,prior_count) VALUES (?,?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,stock?.quantity??scanQuantity(barcode,b.mode),before);
+          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity,prior_count,raw_barcode) VALUES (?,?,?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,stock?.quantity??scanQuantity(barcode,b.mode),before,b.mode==='HS'?rawBarcode:null);
           if(stock)db.prepare('INSERT INTO scan_stock(scan_id,item_code,item_name,maker,vendor,lot_no,quantity_source) VALUES (?,?,?,?,?,?,?)').run(Number(saved.lastInsertRowid),stock.item_code,stock.item_name,stock.maker,stock.vendor,stock.lot_no,stock.quantity_source);
           return {id:Number(saved.lastInsertRowid),barcode_count:before+1,is_duplicate:before>0,prior_count:before};
         });

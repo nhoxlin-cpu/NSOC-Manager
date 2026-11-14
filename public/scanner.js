@@ -1,4 +1,5 @@
-import { fitScanRect,resizeScanRect,enhanceGlare } from '/scanner-tools.js?v=20261113-2';
+import { fitScanRect,fitBarcodeRect,resizeScanRect,enhanceGlare,cameraPoint } from '/scanner-tools.js?v=20261114-19';
+import { hsCode } from '/hs-code.js?v=20261114-19';
 const symbols = {
   continuous:'<path d="M20 7a9 9 0 0 0-15-3L2 7m0-5v5h5M4 17a9 9 0 0 0 15 3l3-3m0 5v-5h-5"/>',
   back:'<path d="M19 12H5m6-6-6 6 6 6"/>',
@@ -53,7 +54,7 @@ export class PhoneScanner {
     this.$('#scanner-title').textContent=options.title || `Scan ${options.mode}`;
     this.$('#scanner-back').onclick=() => this.close();
     this.$('#scanner-manual').onclick=() => { this.close(); options.onManual?.(); };
-    this.$('#scanner-repeat').onclick=() => this.lastCode && this.accept(this.lastCode,true);
+    this.$('#scanner-repeat').onclick=() => this.lastCode && this.accept(this.lastRaw||this.lastCode,true,this.lastImage);
     this.$('#scanner-continuous').onclick=()=>this.setContinuous(!this.continuous);
     this.$('#scanner-next').onclick=()=>this.resumeSingle();
     this.$('#scanner-barcode').onclick=() => this.changeFormat('barcode'); this.$('#scanner-qr').onclick=() => this.changeFormat('qr');
@@ -98,7 +99,7 @@ export class PhoneScanner {
   formatUI() {
     this.dialog.dataset.format=this.format;
     for (const format of ['barcode','qr']) { const b=this.$('#scanner-' + format); b.classList.toggle('active',this.format === format); b.setAttribute('aria-selected',String(this.format === format)); }
-    this.$('#scanner-frame-label').textContent=(this.format === 'qr' ? 'QR' : 'Barcode')+' · Kéo khung / kéo góc · Chụm 2 ngón để zoom';
+    this.$('#scanner-frame-label').textContent=(this.format === 'qr' ? 'QR' : 'Barcode')+' · Chạm lấy nét · Kéo khung · Chụm để zoom';
   }
   async changeFormat(format) {
     if (this.format === format || this.changing) return;
@@ -157,7 +158,7 @@ export class PhoneScanner {
   }
   async loop(epoch) {
     if (!this.active || epoch !== this.epoch) return;
-    if (!this.busy && !this.singlePaused && !this.changing && !this.zoomApplying && !this.gesture && this.capture()) {
+    if (!this.busy && !this.singlePaused && !this.changing && !this.zoomApplying && !this.focusBusy && !this.gesture && this.capture()) {
       let value='';
       try {
         if (this.detector) value=(await this.detector.detect(this.canvas))[0]?.rawValue || '';
@@ -179,13 +180,16 @@ export class PhoneScanner {
   }
   async accept(code,force=false,image=null) {
     if (this.busy || !this.active) return;
+    code=clean(code);const raw=code;
     if(!force && this.options.mode==='HS' && this.lastRead===code)return;
     this.lastRead=code;
     this.stockUI(null);
-    if(code!==this.lastCode)this.lastImage=null;
+    if(raw!==this.lastRaw)this.lastImage=null;
     if(image)this.lastImage=image;
+    this.lastRaw=raw;if(this.options.mode==='HS')code=hsCode(raw);
     this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
     const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:this.options.mode!=='HS'&&!force};
+    if(this.options.mode==='HS')payload.raw_barcode=raw;
     try {
       if(this.options.autoCapture && (!this.options.onCode||this.options.captureOnCode)){
         if(!this.lastImage)throw Error('Chưa chụp được ảnh đối chiếu. Hãy đưa mã vào khung và quét lại.');
@@ -274,12 +278,12 @@ export class PhoneScanner {
     const bounds=this.roiBounds();if(bounds.width<=1||bounds.height<=1)return;
     if(!this.roi&&!reset)try{const saved=JSON.parse(pref('roi-'+(this.options.accountKey||'default')+'-'+this.format,'null'));if(saved&&['x','y','w','h'].every(k=>Number.isFinite(saved[k])&&saved[k]>=0&&saved[k]<=1))this.roi=saved;}catch{}
     let rect;
-    if(!this.roi||reset){const side=Math.min(bounds.width*.67,bounds.height*.8,290),w=this.format==='qr'?side:bounds.width*.94,h=this.format==='qr'?side:Math.min(innerHeight*.21,bounds.height*.8,185);rect={x:(bounds.width-w)/2,y:(bounds.height-h)/2,w,h};}
+    if(!this.roi||reset){const side=Math.min(bounds.width*.67,bounds.height*.8,290),w=this.format==='qr'?side:bounds.width*.94,h=this.format==='qr'?side:Math.min(w/2.8,bounds.height*.8,160);rect={x:(bounds.width-w)/2,y:(bounds.height-h)/2,w,h};}
     else rect={x:this.roi.x*bounds.width,y:this.roi.y*bounds.height,w:this.roi.w*bounds.width,h:this.roi.h*bounds.height};
     this.setRoi(rect,bounds);
   }
   setRoi(rect,bounds=this.roiBounds()) {
-    const fit=fitScanRect(rect,bounds.width,bounds.height,this.format==='qr');
+    const fit=this.format==='qr'?fitScanRect(rect,bounds.width,bounds.height,true):fitBarcodeRect(rect,bounds.width,bounds.height);
     Object.assign(this.$('#scanner-frame').style,{left:fit.x+'px',top:fit.y+'px',width:fit.w+'px',height:fit.h+'px'});
     this.roi={x:fit.x/bounds.width,y:fit.y/bounds.height,w:fit.w/bounds.width,h:fit.h/bounds.height};
   }
@@ -294,12 +298,31 @@ export class PhoneScanner {
       else if(points.length===1)this.gesture={type:e.target.closest('[data-resize]')?'resize':e.target.closest('#scanner-frame')?'move':this.digitalZoom>1?'pan':'move',corner:e.target.closest('[data-resize]')?.dataset.resize,start:{x:e.clientX,y:e.clientY},rect:rect(),pan:{...this.videoPan}};
     };
     body.onpointermove=e=>{if(!this.pointers.has(e.pointerId)||!this.gesture)return;e.preventDefault();this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});const g=this.gesture,b=this.roiBounds();
+      if(g.type!=='pinch'&&!g.moved){if(Math.hypot(e.clientX-g.start.x,e.clientY-g.start.y)<8)return;g.moved=true;}
       if(g.type==='pinch'){const p=[...this.pointers.values()];if(p.length<2)return;this.zoom(g.zoom*Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)/Math.max(1,g.distance));this.videoPan={x:g.pan.x+(p[0].x+p[1].x)/2-g.mid.x,y:g.pan.y+(p[0].y+p[1].y)/2-g.mid.y};this.applyVideoTransform();}
       else {const dx=e.clientX-g.start.x,dy=e.clientY-g.start.y;if(g.type==='resize')this.setRoi(resizeScanRect(g.rect,g.corner,dx,dy,b.width,b.height,this.format==='qr'),b);else if(g.type==='pan'){this.videoPan={x:g.pan.x+dx,y:g.pan.y+dy};this.applyVideoTransform();}else this.setRoi({...g.rect,x:g.rect.x+dx,y:g.rect.y+dy},b);}
     };
-    const finish=e=>{this.pointers.delete(e.pointerId);this.gesture=null;this.hits=0;this.saveRoi();};body.onpointerup=finish;body.onpointercancel=finish;
+    const finish=e=>{const g=this.gesture,tap=e.type==='pointerup'&&this.pointers.size===1&&g&&g.type!=='pinch'&&g.type!=='resize'&&!g.moved;this.pointers.delete(e.pointerId);this.gesture=null;this.hits=0;this.saveRoi();if(tap)this.focusAt(e.clientX,e.clientY);};body.onpointerup=finish;body.onpointercancel=finish;
     frame.onkeydown=e=>{const r=rect(),step=e.shiftKey?20:8;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();this.setRoi({...r,x:r.x+(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0),y:r.y+(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)});this.saveRoi();}else if(['+','=','-'].includes(e.key)){e.preventDefault();const factor=e.key==='-'?.9:1.1;this.setRoi({...r,w:r.w*factor,h:r.h*factor});this.saveRoi();}};
     this.resizeObserver=new ResizeObserver(()=>{if(this.active){this.layoutRoi();this.applyVideoTransform();}});this.resizeObserver.observe(body);
+  }
+  async focusAt(clientX,clientY){
+    if(!this.active||!this.track||this.focusBusy)return;
+    clearTimeout(this.focusRestore);clearTimeout(this.focusHide);
+    let ring=this.$('.scanner-focus');if(!ring){ring=document.createElement('div');ring.className='scanner-focus';ring.setAttribute('role','status');ring.innerHTML='<span></span>';this.dialog.append(ring);}
+    ring.hidden=false;ring.style.left=clientX+'px';ring.style.top=clientY+'px';ring.dataset.state='working';ring.querySelector('span').textContent='Lấy nét';
+    const track=this.track,epoch=this.epoch,modes=this.caps.focusMode||[],mode=modes.includes('single-shot')?'single-shot':modes.includes('continuous')?'continuous':null;
+    const supported=navigator.mediaDevices?.getSupportedConstraints?.()||{},pointSupport=supported.pointsOfInterest===true||Object.hasOwn(this.caps,'pointsOfInterest');
+    const point=cameraPoint(clientX,clientY,this.video.getBoundingClientRect(),this.video.videoWidth,this.video.videoHeight),advanced={};
+    if(mode)advanced.focusMode=mode;if(pointSupport)advanced.pointsOfInterest=[point];
+    this.focusBusy=true;
+    try{
+      if(!mode)throw Error('unsupported');
+      await track.applyConstraints({advanced:[advanced]});if(!this.active||epoch!==this.epoch)return;
+      ring.dataset.state='applied';ring.querySelector('span').textContent=pointSupport?'Lấy nét':'Tự lấy nét';
+      if(mode==='single-shot'&&modes.includes('continuous'))this.focusRestore=setTimeout(()=>{if(this.active&&this.track===track)track.applyConstraints({advanced:[{focusMode:'continuous',...(pointSupport?{pointsOfInterest:[point]}:{})}]}).catch(()=>{});},1200);
+    }catch{if(this.active&&epoch===this.epoch){ring.dataset.state='unsupported';ring.querySelector('span').textContent='Không hỗ trợ';}}
+    finally{this.focusBusy=false;if(this.active&&epoch===this.epoch)this.focusHide=setTimeout(()=>{ring.hidden=true;},1500);}
   }
   async setGlare(on) {
     this.glare=on;const button=this.$('#scanner-glare');button.setAttribute('aria-pressed',String(on));button.classList.toggle('enabled',on);
@@ -317,6 +340,7 @@ export class PhoneScanner {
   releaseStream() { this.stream?.getTracks().forEach(t=>t.stop()); this.stream=null; this.track=null; if (this.video) this.video.srcObject=null; }
   release() {
     if (!this.active) return;
+    clearTimeout(this.focusRestore);clearTimeout(this.focusHide);
     this.saveRoi();this.resizeObserver?.disconnect();this.pointers.clear();this.gesture=null;this.active=false; this.epoch++; clearTimeout(this.timer); this.releaseStream(); this.audio?.close().catch(()=>{}); document.body.classList.remove('scanner-open'); this.dialog.removeEventListener('close',this.onClose); this.options.onChanged?.();
   }
   close() { if (this.dialog.open) this.dialog.close(); this.release(); }

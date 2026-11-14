@@ -364,6 +364,16 @@ test('cutting conversion import, role boundaries, exact pairs, evidence and sepa
  assert.equal((await request('/cutting.js')).status,200);assert.equal((await request('/cutting.css')).status,200);
 });
 
+test('HS canonical codes share duplicate counts while raw labels, other modes and request retries retain evidence',async()=>{
+  const a={request_id:randomUUID(),mode:'HS',barcode:'0837770049AA-261113-4981-000100'};
+  const first=await request('/api/scans',inspector,'POST',a);assert.equal(first.status,201);assert.equal(first.data.is_duplicate,false);
+  const second=await request('/api/scans',inspector,'POST',{...a,request_id:randomUUID(),barcode:'0837770049AA2611144981000200'});assert.equal(second.status,201);assert.equal(second.data.is_duplicate,true);
+  assert.equal((await request('/api/scans',inspector,'POST',a)).status,200);
+  const check=await request('/api/scans/check?mode=HS&barcode='+encodeURIComponent(a.barcode),viewer);assert.equal(check.data.barcode,'0837770049AA');assert.equal(check.data.count,2);
+  const rows=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='0837770049AA');assert.equal(rows.length,2);assert.equal(rows.find(r=>r.id===first.data.id).raw_barcode,a.barcode);
+  for(const mode of ['Stock','Label']){const result=await request('/api/scans',inspector,'POST',{...a,mode,request_id:randomUUID()});assert.equal(result.status,201);assert.equal(db.prepare('SELECT barcode FROM scans WHERE id=?').get(result.data.id).barcode,a.barcode);}
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);

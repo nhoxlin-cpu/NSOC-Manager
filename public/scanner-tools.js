@@ -5,6 +5,14 @@ export function fitScanRect(rect,width,height,square=false) {
   if (square) w=h=Math.min(Math.max(96,Math.min(w,h)),width,height);
   return {x:clamp(rect.x,0,width-w),y:clamp(rect.y,0,height-h),w,h};
 }
+export function fitBarcodeRect(rect,width,height){
+  const fit=fitScanRect(rect,width,height),h=Math.min(fit.h,fit.w/2.4);
+  return {...fit,h,y:clamp(rect.y+Math.max(0,rect.h-h)/2,0,Math.max(0,height-h))};
+}
+export function cameraPoint(clientX,clientY,rect,videoWidth,videoHeight){
+  const scale=Math.max(rect.width/Math.max(1,videoWidth),rect.height/Math.max(1,videoHeight));
+  return {x:clamp(((videoWidth-rect.width/scale)/2+(clientX-rect.left)/scale)/Math.max(1,videoWidth),0,1),y:clamp(((videoHeight-rect.height/scale)/2+(clientY-rect.top)/scale)/Math.max(1,videoHeight),0,1)};
+}
 export function resizeScanRect(rect,corner,dx,dy,width,height,square=false) {
   const left=corner.includes('l'),top=corner.includes('t');
   const anchorX=left ? rect.x+rect.w : rect.x,anchorY=top ? rect.y+rect.h : rect.y;

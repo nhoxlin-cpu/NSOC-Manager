@@ -1,6 +1,6 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fitScanRect,resizeScanRect,enhanceGlare} from '../public/scanner-tools.js';
+import {fitScanRect,fitBarcodeRect,resizeScanRect,enhanceGlare,cameraPoint} from '../public/scanner-tools.js';
 
 test('moving the scan area stays inside the available view and QR stays square',()=>{
   assert.deepEqual(fitScanRect({x:-90,y:500,w:200,h:90},320,240),{x:0,y:150,w:200,h:90});
@@ -13,4 +13,13 @@ test('resizing holds the opposite corner and clamps oversized or tiny regions',(
 });
 test('glare processing leaves clipped white pixels white instead of inventing detail',()=>{
   const data=new Uint8ClampedArray(128*64*4).fill(255);enhanceGlare({width:128,height:64,data});assert.ok(data.every(v=>v===255));
+});
+test('Barcode fixes tall or square saved regions while QR remains square',()=>{
+  for(const bounds of [[390,500],[320,160],[800,120]])for(const rect of [{x:0,y:0,w:390,h:500},{x:10,y:20,w:150,h:150},{x:300,y:400,w:500,h:999}]){const r=fitBarcodeRect(rect,...bounds);assert.ok(r.w/r.h>=2.39);assert.ok(r.x>=0&&r.y>=0&&r.x+r.w<=bounds[0]&&r.y+r.h<=bounds[1]);}
+  const qr=fitScanRect({x:0,y:0,w:250,h:180},390,500,true);assert.equal(qr.w,qr.h);
+});
+test('tap coordinates follow video cover cropping, zoomed bounds and clamp to the sensor',()=>{
+  assert.deepEqual(cameraPoint(200,150,{left:0,top:0,width:400,height:300},1920,1080),{x:.5,y:.5});
+  const point=cameraPoint(0,150,{left:-200,top:-150,width:800,height:600},1920,1080);assert.ok(point.x>0&&point.x<.5);assert.equal(point.y,.5);
+  assert.deepEqual(cameraPoint(-10000,10000,{left:0,top:0,width:400,height:300},1920,1080),{x:0,y:1});
 });

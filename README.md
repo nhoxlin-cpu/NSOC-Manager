@@ -8,6 +8,8 @@
 - Trang chủ có banner động HANSOL · HEVH · IQC · Chất lượng, hỗ trợ tạm dừng và chế độ giảm chuyển động của thiết bị. Quét & thu thập dữ liệu nằm trong nhóm ô chức năng.
 - Mỗi tài khoản tự chọn 3–5 phím tắt, thay đổi thứ tự và dùng lại bố cục đã lưu trên thiết bị khác.
 - Quét HS / Stock / Label bằng bàn phím, máy scan hoặc camera điện thoại.
+- HS chỉ hiển thị/lưu phần code chuẩn: 12 ký tự đuôi hai chữ (AA/NF/AF/…) hoặc 13 ký tự đuôi ba chữ, trước dấu gạch nối hoặc phần dữ liệu số nối tiếp. Nhãn gốc giữ trong raw_barcode; nhận diện trùng theo code, giữ mỗi lượt/lô riêng và không lưu lặp từng frame. Dữ liệu HS cũ được chuẩn hóa một lần, giữ ảnh, ID và kết quả so sánh đã ghi.
+- Khung Barcode luôn nằm ngang kể cả khi kéo, đổi cỡ, xoay máy hoặc tải vùng vuông đã lưu; QR giữ vuông. Chạm vùng camera để lấy nét theo điểm nếu thiết bị hỗ trợ; kéo/resize/pinch không bị hiểu thành chạm lấy nét.
 - Quét liên tục mặc định bật trên HS / Stock / Label và camera điền mã CKD / MM / Holding. Nút bật/tắt lưu theo tài khoản; khi tắt, đọc một mã rồi chọn “Quét mã tiếp theo”. Quét điền mã vẫn cần xác nhận box hoặc giao dịch kho riêng.
 - Camera toàn màn hình gọn: Barcode / QR, quét liên tục, tự lưu mã mới, cảnh báo trùng, đếm lượt; zoom, flash, âm thanh và rung khi thiết bị hỗ trợ. Dùng camera sau, không có nút lật camera; điều khiển gộp hai hàng và nút quay lại/flash cỡ nhỏ.
 - Giữ một mã trước camera không tạo thêm lượt liên tục. HS lưu cả mã trùng; Stock / Label chỉ lưu thêm mã đã có khi người dùng chủ động chọn.
@@ -60,7 +62,7 @@ Mở `http://127.0.0.1:3000`. Mặc định server chỉ nghe trên loopback và
 node --test tests/*.test.mjs
 ```
 
-53 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV, dữ liệu bền, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, ảnh nhúng và ảnh gốc, tự tạo mã lượt, định dạng báo cáo, mã có số 0 đầu, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và ranh giới vùng quét.
+63 bài kiểm tra bao gồm phân quyền, CSRF, MM Excel/CSV và upload chậm, cắt chân AI/MI, dữ liệu bền, code HS 12/13 ký tự và nhãn gốc, chống trùng, xác nhận đồng thời, tồn kho, đổi mật khẩu, Excel/ZIP, ảnh nhúng, định dạng báo cáo, giờ GMT+7, cấu hình riêng theo tài khoản, Maker MM, ba tab CKD, phân trang và hình dạng/toạ độ vùng quét.
 
 Giao diện camera đã được thử bằng video mô phỏng, giải mã ảnh QR / Code128, phục hồi ảnh barcode tương phản thấp, kéo/đổi cỡ khung và thao tác pinch. Hoạt động phần cứng flash, zoom, rung và phơi sáng phụ thuộc thiết bị/trình duyệt; chưa xác minh trên sản phẩm bóng thật của người dùng.
 
