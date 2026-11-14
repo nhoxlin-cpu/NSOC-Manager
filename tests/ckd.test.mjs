@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { randomUUID } from 'node:crypto';
 import { openDatabase } from '../lib/db.mjs';
-import { initCkd,parseCkdWorkbook,importCkdWorkbook,checkCkd,saveCkd,makerMatches,ckdOverview } from '../lib/ckd.mjs';
+import { initCkd,parseCkdWorkbook,importCkdWorkbook,checkCkd,saveCkd,makerMatches,ckdOverview,deleteCkdHistory } from '../lib/ckd.mjs';
 import { readWorkbook } from '../lib/xlsx-read.mjs';
 import { excel } from '../lib/formats.mjs';
 
@@ -17,6 +17,29 @@ function fixture(){
   const save=overrides=>saveCkd(db,{...pair,request_id:randomUUID(),box_ref:randomUUID(),...overrides},1);
   return {db,pair,save,parsed};
 }
+test('CKD deletion recalculates excess/full/short/unsold, cascades photos and prevents old save retries returning',()=>{
+ const {db,pair,save}=fixture();try{const body={...pair,request_id:randomUUID()},image=Buffer.from('photo-fixture'),first=saveCkd(db,body,1,[{slot:'samsung',mime:'image/png',buffer:image},{slot:'item',mime:'image/png',buffer:image}]),second=save(),third=save({accept_over:true});
+ assert.equal(ckdOverview(db,pair.workbook_id).summary[0].quantity_status,'Dư');
+ deleteCkdHistory(db,{workbook_id:pair.workbook_id,ids:[third.id]},1);assert.equal(ckdOverview(db,pair.workbook_id).summary[0].quantity_status,'Đủ');
+ deleteCkdHistory(db,{workbook_id:pair.workbook_id,ids:[first.id]},1);assert.equal(ckdOverview(db,pair.workbook_id).summary[0].quantity_status,'Thiếu');assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_check_images WHERE check_id=?').get(first.id).n,0);
+ deleteCkdHistory(db,{workbook_id:pair.workbook_id,ids:[second.id]},1);const empty=ckdOverview(db,pair.workbook_id);assert.equal(empty.summary.length,0);assert.equal(empty.unsold.length,1);assert.throws(()=>saveCkd(db,body,1),/đã bị xóa/);
+ const newer=save();assert.ok(newer.id>third.id);assert.equal(deleteCkdHistory(db,{workbook_id:pair.workbook_id,all:true,through_id:third.id},1).deleted,0);assert.ok(db.prepare('SELECT id FROM ckd_checks WHERE id=?').get(newer.id));assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_models').get().n,1);assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_orders').get().n,2);
+ }finally{db.close();}
+});
+test('CKD deletion rejects cross-SO selections and preserves checks newer than the confirmation snapshot',()=>{
+ const {db,pair,save,parsed}=fixture();try{const first=save(),other=importCkdWorkbook(db,parsed,'Other SO',1),foreign=save({workbook_id:other.id});
+ assert.throws(()=>deleteCkdHistory(db,{workbook_id:pair.workbook_id,ids:[first.id,foreign.id]},1),/SO khác/);assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_deleted_requests').get().n,0);
+ const newer=save();assert.equal(deleteCkdHistory(db,{workbook_id:pair.workbook_id,all:true,through_id:first.id},1).deleted,1);assert.ok(db.prepare('SELECT id FROM ckd_checks WHERE id=?').get(foreign.id));assert.ok(db.prepare('SELECT id FROM ckd_checks WHERE id=?').get(newer.id));
+ assert.throws(()=>deleteCkdHistory(db,{workbook_id:true,ids:[newer.id]},1));assert.throws(()=>deleteCkdHistory(db,{workbook_id:pair.workbook_id,ids:[]},1));assert.equal(ckdOverview(db,pair.workbook_id).summary[0].total,5000);
+ }finally{db.close();}
+});
+test('deleting NG does not remove PASS quantity; failed CKD delete rolls back checks, photos and deletion markers',()=>{
+ const {db,pair,save}=fixture();try{const pass=save(),ng=save({item_code:'MISSING',accept_ng:true});deleteCkdHistory(db,{workbook_id:pair.workbook_id,ids:[ng.id]},1);assert.equal(ckdOverview(db,pair.workbook_id).summary[0].total,5000);const second=save();
+ db.prepare("INSERT INTO ckd_check_images(check_id,slot,mime,image) VALUES (?,'samsung','image/png',?)").run(pass.id,Buffer.from('fixture'));
+ db.exec(`CREATE TRIGGER fail_ckd_delete BEFORE DELETE ON ckd_checks WHEN OLD.id=${second.id} BEGIN SELECT RAISE(ABORT,'test failure'); END;`);
+ assert.throws(()=>deleteCkdHistory(db,{workbook_id:pair.workbook_id,all:true,through_id:second.id},1));assert.equal(ckdOverview(db,pair.workbook_id).summary[0].total,10000);assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_check_images').get().n,1);assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_deleted_requests').get().n,1);
+ }finally{db.close();}
+});
 test('CKD checks Samsung and ITEM against model and selling codes; uses Description and MOQ',()=>{
   const {db,pair}=fixture();try{
     const r=checkCkd(db,pair);assert.equal(r.pass,true);assert.equal(r.qty,5000);assert.equal(r.target,10000);assert.equal(r.model.description,'1M ohm, +/-1%, 1608');assert.equal(r.quantity_status,'Thiếu');

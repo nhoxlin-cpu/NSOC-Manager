@@ -347,6 +347,14 @@ test('CKD occurrence history paginates without losing or repeating scan rows',as
   const first=(await request('/api/ckd/history?workbook_id='+w.id,viewer)).data;assert.equal(first.checks.length,200);assert.equal(first.count,205);assert.ok(first.next);
   const second=(await request('/api/ckd/history?workbook_id='+w.id+'&before='+first.next,viewer)).data;assert.equal(second.checks.length,5);assert.equal(second.next,null);assert.equal(new Set([...first.checks,...second.checks].map(c=>c.id)).size,205);
 });
+test('CKD history delete requires admin/CSRF, removes evidence and updates history and reports',async()=>{
+ db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)').run('DELETE-ITEM','DELETE-MM','Part','Fixture','QA MAKER','V','A1',100,100);
+ const w=importCkdWorkbook(db,{models:[{samsung:'BN83-QADELETE',items:'DELETE-ITEM',item:'Part',description:'Fixture',maker:'QA MAKER',moq_text:'100',moq:100}],orders:[{samsung:'BN83-QADELETE',so_no:'1',items:'DELETE-ITEM',selling_code:'DELETE-ITEM',selling_qty:100,so_maker:'QA MAKER',maker:'QA MAKER',vendor:'V',type:'Local'}],missing_moq:0},'Delete QA SO',1);
+ const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOuIAAAAASUVORK5CYII=',pair={workbook_id:w.id,samsung:'BN83-QADELETE',item_code:'DELETE-ITEM',request_id:randomUUID(),images:{samsung:image,item:image}},saved=await request('/api/ckd/pair/save',inspector,'POST',pair),body={workbook_id:w.id,ids:[saved.data.id]};assert.equal(saved.status,201);
+ assert.equal((await request('/api/ckd/history/delete',null,'POST',body)).status,401);for(const user of [inspector,viewer])assert.equal((await request('/api/ckd/history/delete',user,'POST',body)).status,403);assert.equal((await request('/api/ckd/history/delete',admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
+ assert.equal((await request('/api/ckd/history/delete',admin,'POST',body)).data.deleted,1);const history=(await request('/api/ckd/history?workbook_id='+w.id,viewer)).data;assert.equal(history.count,0);assert.equal(history.max_id,0);assert.equal(history.totals.length,0);assert.equal(history.unsold.length,1);assert.equal((await request('/api/ckd/checks/'+saved.data.id+'/image/item',viewer)).status,404);
+ assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair)).status,400);const again=await request('/api/ckd/pair/save',inspector,'POST',{...pair,request_id:randomUUID()});assert.equal(again.status,201);assert.ok(again.data.id>saved.data.id);
+});
 
 test('Excel MM import authorizes uploads, imports every sheet atomically and shares decimal Stock quantities',async()=>{
   const wb=XLSX.utils.book_new(),columns=['LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY','LOT_NO','BP_NM'];

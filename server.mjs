@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
 import { digest, hashPassword, verifyPassword, publicUser, issueSession, sessionUser, roles } from './lib/auth.mjs';
 import { parseCSV, excel, streamZip, reportWorkbook } from './lib/formats.mjs';
-import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOverview } from './lib/ckd.mjs';
+import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOverview, deleteCkdHistory } from './lib/ckd.mjs';
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
@@ -95,7 +95,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'holding-item-edit-20261114-32' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-delete-20261114-33' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -204,12 +204,13 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(path.endsWith('/save')&&b.images){if(typeof b.images!=='object'||Array.isArray(b.images)||Object.keys(b.images).some(k=>!['samsung','item'].includes(k)))fail(400,'Ảnh CKD không hợp lệ.');for(const slot of ['samsung','item'])if(b.images[slot]){const value=b.images[slot],source=typeof value==='string'?value:value?.source;const parsed={slot,...imageData(source)};if(!parsed.buffer)fail(400,'Missing capture image');if(typeof value==='object'&&value.thumbnail){const thumb=imageData(value.thumbnail);if(thumb.mime!=='image/jpeg'||thumb.buffer.length>65536)fail(400,'Invalid image thumbnail');parsed.thumbnail=thumb.buffer;}images.push(parsed);}}
         try {const result=path.endsWith('/save')?saveCkd(db,b,u.id,images):checkCkd(db,b);return send(res,path.endsWith('/save')&&!result.duplicate?201:200,result);}catch(e){fail(400,e.message);}
       }
+      if(req.method==='POST'&&path==='/api/ckd/history/delete'){adminAccess(u);return send(res,200,deleteCkdHistory(db,await jsonBody(req),u.id));}
       const ckdImage=/^\/api\/ckd\/checks\/(\d+)\/image\/(samsung|item)$/.exec(path);
       if(req.method==='GET'&&ckdImage){const image=db.prepare('SELECT mime,image FROM ckd_check_images WHERE check_id=? AND slot=?').get(Number(ckdImage[1]),ckdImage[2]);if(!image)fail(404,'Chưa có ảnh đối chiếu.');res.writeHead(200,{'Content-Type':image.mime,'Cache-Control':'no-store'});res.end(image.image);return;}
       if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export','/api/ckd/report.zip'].includes(path)) {
         const workbook=Number(url.searchParams.get('workbook_id')),all=url.searchParams.get('scope')==='all'&&path!=='/api/ckd/history';
         if(!all&&(!Number.isSafeInteger(workbook)||workbook<1))fail(400,'Chon SO.');
-        if(path.endsWith('/history')){const report=ckdOverview(db,workbook),before=Number(url.searchParams.get('before'))||0,rows=report.checks.filter(c=>!before||c.id<before),checks=rows.slice(0,200);return send(res,200,{checks,next:rows.length>200?checks.at(-1).id:null,count:report.checks.length,summary:report.summary,unsold:report.unsold,totals:report.summary.filter(g=>g.boxes>0)});}
+        if(path.endsWith('/history')){const report=ckdOverview(db,workbook),before=Number(url.searchParams.get('before'))||0,rows=report.checks.filter(c=>!before||c.id<before),checks=rows.slice(0,200);return send(res,200,{checks,next:rows.length>200?checks.at(-1).id:null,count:report.checks.length,max_id:report.checks[0]?.id||0,summary:report.summary,unsold:report.unsold,totals:report.summary.filter(g=>g.boxes>0)});}
         let report;try{report=ckdReport(db,all?0:workbook,{exportedBy:u.name,imageLinks:path.endsWith('.zip')});}catch(e){fail(400,e.message);}
         if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
