@@ -11,6 +11,8 @@ import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
 import { importMMRows,listMM } from './lib/mm-data.mjs';
+import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
+import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -43,12 +45,12 @@ async function jsonBody(req, limit = 5 * 1024 * 1024) {
   try { const value = JSON.parse(Buffer.concat(chunks)); if (!value || Array.isArray(value) || typeof value !== 'object') throw Error(); return value; }
   catch { fail(400, 'Dữ liệu JSON không hợp lệ.'); }
 }
-async function workbookBody(req){
+async function workbookBody(req,label='MM'){
   if(req.headers['content-type']?.split(';')[0]!=='application/octet-stream')fail(415,'Gửi trực tiếp file Excel .xls hoặc .xlsx.');
-  if(Number(req.headers['content-length'])>MAX_MM_BYTES)fail(413,'File MM tối đa 32 MB.');
+  if(Number(req.headers['content-length'])>MAX_MM_BYTES)fail(413,`File ${label} tối đa 32 MB.`);
   const chunks=[];let total=0;
-  for await(const chunk of req){total+=chunk.length;if(total>MAX_MM_BYTES)fail(413,'File MM tối đa 32 MB.');chunks.push(chunk);}
-  if(!total)fail(400,'File MM rỗng.');return Buffer.concat(chunks,total);
+  for await(const chunk of req){total+=chunk.length;if(total>MAX_MM_BYTES)fail(413,`File ${label} tối đa 32 MB.`);chunks.push(chunk);}
+  if(!total)fail(400,`File ${label} rỗng.`);return Buffer.concat(chunks,total);
 }
 function imageData(source) {
   if (!source) return { mime: null, buffer: null };
@@ -82,14 +84,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-upload-20261113-18' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'cutting-ai-mi-20261114-1' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -187,6 +189,33 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
+      if(req.method==='GET'&&path==='/api/cutting/status')return send(res,200,cuttingStatus(db));
+      if(req.method==='GET'&&path==='/api/cutting/template'){
+        const bytes=excel([['Model Code','Model Name','MI 1st','AI 1st','MI 2nd','AI 2nd','Item Name','Maker 1st','Maker 2nd','BOM QTY','Location','FCN']]);
+        res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="ai-mi-template.xlsx"'});res.end(bytes);return;
+      }
+      if(req.method==='POST'&&path==='/api/cutting/import-file'){
+        adminAccess(u);let name;try{name=decodeURIComponent(req.headers['x-mm-file-name']||'');}catch{fail(400,'Tên file không hợp lệ.');}name=text(name,'Tên file',200);
+        const bytes=await workbookBody(req,'quy đổi AI/MI');let parsed;try{parsed=await parseCuttingInWorker(bytes);}catch(e){fail(400,e.message);}
+        return send(res,201,importCutting(db,parsed,name,u.id));
+      }
+      if(req.method==='GET'&&path==='/api/cutting/lookup'){
+        try{return send(res,200,lookupCutting(db,{code:url.searchParams.get('code'),model:url.searchParams.get('model')||'',direction:url.searchParams.get('direction')||'auto'}));}catch(e){fail(400,e.message);}
+      }
+      if(req.method==='POST'&&path==='/api/cutting/scans'){
+        writeAccess(u);const b=await jsonBody(req);const id=requestId(b.request_id),image=imageData(b.image);
+        const previous=db.prepare('SELECT user_id FROM cutting_scans WHERE request_id=?').get(id);if(previous&&previous.user_id!==u.id)fail(409,'Mã yêu cầu đã thuộc tài khoản khác.');
+        try{return send(res,201,saveCuttingScan(db,{request_id:id,user_id:u.id,code:b.code,model:b.model||'',direction:b.direction||'auto',image}));}catch(e){fail(400,e.message);}
+      }
+      if(req.method==='GET'&&path==='/api/cutting/scans'){
+        const before=Number(url.searchParams.get('before'))||Number.MAX_SAFE_INTEGER;
+        const rows=db.prepare('SELECT s.id,s.code,s.snapshot,s.created_at,u.name AS scanner,s.image IS NOT NULL AS has_image FROM cutting_scans s JOIN users u ON u.id=s.user_id WHERE s.id<? ORDER BY s.id DESC LIMIT 50').all(before);
+        return send(res,200,{scans:rows.map(({snapshot,...row})=>{const value=JSON.parse(snapshot);return {...row,count:value.count,targets:[...new Set(value.matches.map(m=>m.target_code))],model:value.model,direction:value.direction};}),next:rows.length===50?rows.at(-1).id:null,total:db.prepare('SELECT COUNT(*) n FROM cutting_scans').get().n});
+      }
+      const cuttingImage=/^\/api\/cutting\/scans\/(\d+)\/image$/.exec(path);
+      if(req.method==='GET'&&cuttingImage){const row=db.prepare('SELECT image_type,image FROM cutting_scans WHERE id=?').get(Number(cuttingImage[1]));if(!row?.image)fail(404,'Chưa có ảnh đối chiếu.');res.writeHead(200,{'Content-Type':row.image_type});res.end(row.image);return;}
+      const cuttingDetail=/^\/api\/cutting\/scans\/(\d+)$/.exec(path);
+      if(req.method==='GET'&&cuttingDetail){const row=db.prepare('SELECT s.id,s.code,s.snapshot,s.created_at,s.image IS NOT NULL AS has_image,u.name AS scanner FROM cutting_scans s JOIN users u ON u.id=s.user_id WHERE s.id=?').get(Number(cuttingDetail[1]));if(!row)fail(404,'Không tìm thấy lượt quy đổi.');return send(res,200,{...JSON.parse(row.snapshot),id:row.id,scanner:row.scanner,created_at:row.created_at,has_image:row.has_image});}
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
         const field=url.searchParams.get('field')||'all';

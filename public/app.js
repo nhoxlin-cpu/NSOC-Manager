@@ -1,5 +1,6 @@
+import { renderCutting } from '/cutting.js?v=20261114-1';
 import { renderCkd } from '/ckd.js?v=20261113-17';
-import { PhoneScanner, zxing } from '/scanner.js?v=20261113-mm13';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261114-cut1';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -275,8 +276,8 @@ function barcodeWriter(){
   });
   return barcodeWriterPromise;
 }
-async function showScanCode(row){
-  detail('Mã đã quét · #'+row.id,`<div class="actions code-formats"><button class="button small primary" data-code-format="qr" aria-pressed="true">QR</button><button class="button small" data-code-format="barcode" aria-pressed="false">Mã vạch</button></div><p class="muted" id="code-status" role="status"></p><div class="generated-code" id="generated-code"></div><pre class="readable">${escape(row.barcode)}</pre>`);
+async function showScanCode(row,title){
+  detail(title||'Mã đã quét · #'+row.id,`<div class="actions code-formats"><button class="button small primary" data-code-format="qr" aria-pressed="true">QR</button><button class="button small" data-code-format="barcode" aria-pressed="false">Mã vạch</button></div><p class="muted" id="code-status" role="status"></p><div class="generated-code" id="generated-code"></div><pre class="readable">${escape(row.barcode)}</pre>`);
   const host=$('#generated-code'),status=$('#code-status');let generation=0;
   async function draw(format){
     const version=++generation;host.dataset.format=format;host.replaceChildren();status.textContent='Đang tạo mã…';
@@ -408,8 +409,12 @@ function assistant() {
     ['shield','Tài khoản & quyền','Hai biểu tượng Tài khoản đều mở cùng trang đăng nhập hoặc hồ sơ. Quản trị viên cấp tài khoản; nhân viên được ghi nhận dữ liệu; tài khoản chỉ xem được tra cứu và xuất báo cáo.']
   ].map(([symbol,title,description]) => `<article class="help-card"><h3>${icon(symbol)}${title}</h3><p>${description}</p></article>`).join('')}</div><p class="muted mt">Đây là hướng dẫn sử dụng, chưa có chatbot AI được kết nối.</p>`;
 }
-function cutting() {
-  $('#main').innerHTML = `${pageTop('Cắt chân linh kiện', 'Tra mã AI ↔ MI')}<section class="panel">${empty('Chưa có bảng quy đổi AI ↔ MI', 'Cần bổ sung bảng mã và quy tắc cắt chân thực tế của công ty trước khi tra cứu. Dữ liệu MM hiện tại chưa bao gồm thông tin này.', 'cut')}<a class="button mt" href="#mm">${icon('search')} Xem danh mục MM</a></section>`;
+async function cutting() {
+  if(!state.user){$('#main').innerHTML=needsLogin('Cắt chân linh kiện');return;}
+  await renderCutting({api,state,escape,number,time,icon,button,field,pageTop,canWrite,detail,toast,scanFlowBar,setContinuousScan,updateCaptureUI,
+    showCode:code=>showScanCode({barcode:code},'Mã quy đổi AI ↔ MI'),
+    openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}
+  });
 }
 
 async function render() {
