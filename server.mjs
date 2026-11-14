@@ -13,7 +13,7 @@ import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOve
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
-import { importMMRows,listMM } from './lib/mm-data.mjs';
+import { importMMRows,listMM,lookupAndSaveMM } from './lib/mm-data.mjs';
 import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
 import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
 import {initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
@@ -101,7 +101,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'backup-guide-20261114-37' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'mm-saved-spec-20261114-38' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -258,6 +258,13 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if(req.method==='GET'&&cuttingImage){const row=db.prepare('SELECT image_type,image FROM cutting_scans WHERE id=?').get(Number(cuttingImage[1]));if(!row?.image)fail(404,'Chưa có ảnh đối chiếu.');res.writeHead(200,{'Content-Type':row.image_type});res.end(row.image);return;}
       const cuttingDetail=/^\/api\/cutting\/scans\/(\d+)$/.exec(path);
       if(req.method==='GET'&&cuttingDetail){const row=db.prepare('SELECT s.id,s.code,s.snapshot,s.created_at,s.image IS NOT NULL AS has_image,u.name AS scanner FROM cutting_scans s JOIN users u ON u.id=s.user_id WHERE s.id=?').get(Number(cuttingDetail[1]));if(!row)fail(404,'Không tìm thấy lượt quy đổi.');return send(res,200,{...JSON.parse(row.snapshot),id:row.id,scanner:row.scanner,created_at:row.created_at,has_image:row.has_image});}
+      if(req.method==='GET'&&path==='/api/materials/saved'){
+        const id=Number(url.searchParams.get('id'));if(id){if(!Number.isSafeInteger(id)||id<1)fail(400,'Mã tra cứu không hợp lệ.');const row=db.prepare('SELECT * FROM mm_lookup_saved WHERE id=? AND user_id=?').get(id,u.id);if(!row)fail(404,'Không có dữ liệu tra cứu đã lưu.');return send(res,200,{...JSON.parse(row.snapshot),saved_at:row.updated_at,query:row.query});}
+        const field=url.searchParams.get('field')||'spec',q=(url.searchParams.get('q')||'').slice(0,200);return send(res,200,{saved:db.prepare('SELECT id,field,query,updated_at FROM mm_lookup_saved WHERE user_id=? AND field=? AND instr(lower(query),lower(?))>0 ORDER BY updated_at DESC,id DESC LIMIT 100').all(u.id,field,q)});
+      }
+      if(req.method==='POST'&&path==='/api/materials/lookup'){
+        const b=await jsonBody(req),q=typeof b.q==='string'?b.q.trim():'';if(q.length>200||!['spec','location','item_code'].includes(b.field))fail(400,'Từ khóa hoặc mục tra cứu không hợp lệ.');const offset=b.offset??0;if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)fail(400,'Trang tra cứu không hợp lệ.');return send(res,200,lookupAndSaveMM(db,{q,field:b.field,offset,saved_id:Number.isSafeInteger(b.saved_id)&&b.saved_id>0?b.saved_id:null},u.id));
+      }
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);
         const field=url.searchParams.get('field')||'all';

@@ -77,6 +77,16 @@ before(async () => {
 });
 after(async () => { server.closeAllConnections(); await new Promise(resolve => server.close(resolve)); db.close(); });
 
+test('MM saved lookups require authentication/CSRF, survive data changes and remain private to each account',async()=>{
+ const body={field:'spec',q:'ARCHIVE-SPEC-UNIQUE'};
+ db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)').run('ARCHIVE-ITEM','ARCHIVE-BAR','Part',body.q,'Maker','Vendor','A1',100,10);
+ assert.equal((await request('/api/materials/lookup',null,'POST',body)).status,401);
+ assert.equal((await request('/api/materials/lookup',viewer,'POST',body,{'X-CSRF-Token':'bad'})).status,403);
+ const saved=await request('/api/materials/lookup',viewer,'POST',body);assert.equal(saved.status,200);const id=saved.data.saved_id;assert.ok(id);
+ db.prepare('DELETE FROM materials WHERE item_code=?').run('ARCHIVE-ITEM');assert.equal((await request('/api/materials/lookup',viewer,'POST',body)).data.matched,0);
+ const old=await request('/api/materials/saved?id='+id,viewer);assert.equal(old.status,200);assert.equal(old.data.materials[0].item_code,'ARCHIVE-ITEM');assert.ok(old.data.saved_at);
+ assert.equal((await request('/api/materials/saved?id='+id,admin)).status,404);assert.equal((await request('/api/materials/saved',null)).status,401);assert.equal((await request('/api/materials/saved?field=spec',viewer)).data.saved.length,1);
+});
 test('serves the home UI and protects internal files and anonymous records', async () => {
   const home = await request('/'); assert.equal(home.status,200); assert.match(home.data,/WORK AREA/);
   assert.match(home.headers.get('content-security-policy'),/default-src 'self'/);

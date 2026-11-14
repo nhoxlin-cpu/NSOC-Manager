@@ -385,25 +385,35 @@ async function materials(id) {
     return;
   }
   const mmLookupField=view;
-  let request=0,loaded=[],next=null,lastQuery='';
+  let request=0,loaded=[],next=null,lastQuery='',lookupId=null;
   $('#main').innerHTML=`${pageTop(modes[view],'Tra cứu MM · '+modes[view],'','#mm','Tra cứu MM')}<section class="panel"><form id="mm-search"><div class="search-row"><input id="mm-q" name="q" placeholder="Nhập ${modes[view]} cần tìm" aria-label="Tìm theo ${modes[view]}" maxlength="200" autocomplete="off"><button class="button primary" type="submit">${icon('search')} Xem</button></div><p class="form-message" role="alert"></p></form><p class="muted mm-field-note">${view==='spec'?'Spec dùng cột mô tả (description / spec) trong file MM.':'Tra cứu theo '+modes[view]+'. Để trống rồi chọn Xem để xem danh sách.'}</p><div id="mm-results" aria-live="polite"></div></section>`;
+  function paintResults(result,savedAt=null){
+      const field=mmLookupField,el=$('#mm-results');const columns=[['location','Location'],['item_code','Item code / Samsung'],['spec','Spec'],['item','Item NM'],['maker','Maker / Vendor'],['qty','QTY Stock / Lot No'],['selling_qty','Selling Q’ty / MOQ']];
+      const first=columns.findIndex(([key])=>key===field);columns.unshift(...columns.splice(first,1));
+      const cell=(m,key)=>key==='item_code'?`${escape(m.item_code)}<small>${field==='spec'?number(m.box_count)+' box':escape(m.samsung)}</small>${m.source_sheet?`<small>Sheet: ${escape(m.source_sheet)} · dòng ${m.source_row}</small>`:''}`:key==='spec'?escape(m.description)||'—':key==='maker'?`${escape(m.maker)||'—'}<small>${escape(m.vendor)}</small>`:key==='qty'?`${m.qty==null?'—':number(m.qty)}<small>${escape(m.lot_no)||'—'}</small>`:key==='selling_qty'?`${m.selling_qty==null?'—':number(m.selling_qty)}<small>MOQ ${m.moq==null?'—':number(m.moq)}</small>`:escape(m[key])||'—';
+      el.innerHTML=(savedAt?`<p class="badge amber">Dữ liệu đã lưu · ${escape(time(savedAt))} · Không phải tồn kho hiện tại</p>`:'')+`<p class="muted">${modes[field]} · ${number(result.materials.length)} / ${number(result.matched)} kết quả · ${number(result.total)} dòng trong MM${result.matched>result.materials.length?' · Nhập từ khóa cụ thể hơn để thu hẹp.':''}</p>`+(result.materials.length?`<div class="table-wrap"><table><thead><tr>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${result.materials.map(m=>`<tr>${columns.map(([key])=>`<td class="wrap">${cell(m,key)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>`:empty('Chưa có kết quả',result.total?'Không có '+modes[field]+' phù hợp. Thử từ khóa khác.':state.user.role==='admin'?'Chọn Nhập file để thêm danh mục MM.':'Quản trị viên cần nhập danh mục MM.','search'));
+  }
   const search=async(q,more=false)=>{
     const field=mmLookupField,version=++request,el=$('#mm-results');
-    if(!more){loaded=[];next=null;lastQuery=q;el.textContent='Đang tra cứu '+modes[field]+'…';}
+    if(!more){try{localStorage.setItem('wa-mm-query-u'+state.user.id+'-'+view,q);}catch{}loaded=[];next=null;lastQuery=q;el.textContent='Đang tra cứu '+modes[field]+'…';}
     try{
-      const result=await api('/materials?field='+field+'&q='+encodeURIComponent(q)+(more&&next!==null?'&offset='+next:''));
+      const offset=more&&next!==null?next:0;
+      const result=q.trim()?await api('/materials/lookup',{method:'POST',data:{field,q,offset,saved_id:more?lookupId:null}}):await api('/materials?field='+field+'&q='+encodeURIComponent(q)+'&offset='+offset);
       if(id!==renderId||!el.isConnected||version!==request||field!==mmLookupField)return;
-      loaded=more?[...loaded,...result.materials]:result.materials;next=result.next;result.materials=loaded;
-      const columns=[['location','Location'],['item_code','Item code / Samsung'],['spec','Spec'],['item','Item NM'],['maker','Maker / Vendor'],['qty','QTY Stock / Lot No'],['selling_qty','Selling Q’ty / MOQ']];
-      const first=columns.findIndex(([key])=>key===field);columns.unshift(...columns.splice(first,1));
-      const cell=(m,key)=>key==='item_code'?`${escape(m.item_code)}<small>${escape(m.samsung)}</small>${m.source_sheet?`<small>Sheet: ${escape(m.source_sheet)} · dòng ${m.source_row}</small>`:''}`:key==='spec'?escape(m.description)||'—':key==='maker'?`${escape(m.maker)||'—'}<small>${escape(m.vendor)}</small>`:key==='qty'?`${m.qty==null?'—':number(m.qty)}<small>${escape(m.lot_no)||'—'}</small>`:key==='selling_qty'?`${m.selling_qty==null?'—':number(m.selling_qty)}<small>MOQ ${m.moq==null?'—':number(m.moq)}</small>`:escape(m[key])||'—';
-      el.innerHTML=`<p class="muted">${modes[field]} · ${number(result.materials.length)} / ${number(result.matched)} kết quả · ${number(result.total)} dòng trong MM${result.matched>result.materials.length?' · Nhập từ khóa cụ thể hơn để thu hẹp.':''}</p>`+(result.materials.length?`<div class="table-wrap"><table><thead><tr>${columns.map(([,label])=>`<th>${label}</th>`).join('')}</tr></thead><tbody>${result.materials.map(m=>`<tr>${columns.map(([key])=>`<td class="wrap">${cell(m,key)}</td>`).join('')}</tr>`).join('')}</tbody></table></div><p class="scroll-hint">Vuốt ngang để xem đủ các cột.</p>`:empty('Chưa có kết quả',result.total?'Không có '+modes[field]+' phù hợp. Thử từ khóa khác.':state.user.role==='admin'?'Chọn Nhập file để thêm danh mục MM.':'Quản trị viên cần nhập danh mục MM.','search'));
+      lookupId=result.saved_id||null;loaded=more?[...loaded,...result.materials]:result.materials;next=result.next;result.materials=loaded;
+      paintResults(result);
       if(next!==null){const moreButton=document.createElement('button');moreButton.className='button full mt';moreButton.id='mm-more';moreButton.textContent='Xem thêm';moreButton.onclick=()=>{moreButton.disabled=true;search(lastQuery,true).catch(e=>toast(e.message));};el.append(moreButton);}
     }catch(e){if(id===renderId&&el.isConnected&&version===request)el.innerHTML=empty('Chưa tải được MM',escape(e.message),'sync');throw e;}
   };
+  if(view==='spec')$('.mm-field-note').textContent='Mỗi ITEM một dòng · QTY cộng các box khớp · Gộp Location.';
+  $('#mm-search').insertAdjacentHTML('afterend','<details class="mt" id="mm-saved"><summary>Tra cứu đã lưu</summary><div id="mm-saved-list"></div></details>');
+  $('#mm-saved').ontoggle=async event=>{if(!event.currentTarget.open)return;const list=$('#mm-saved-list');list.textContent='Đang tải…';try{const data=await api('/materials/saved?field='+view+'&q='+encodeURIComponent($('#mm-q').value.trim()));if(!list.isConnected||id!==renderId)return;list.innerHTML=data.saved.length?data.saved.map(row=>`<button class="button full mt" data-mm-saved="${row.id}">${escape(row.query)} · ${escape(time(row.updated_at))}</button>`).join(''):'Chưa có tra cứu đã lưu.';
+    list.querySelectorAll('[data-mm-saved]').forEach(button=>button.onclick=async()=>{button.disabled=true;const version=++request;try{const saved=await api('/materials/saved?id='+button.dataset.mmSaved);if(id!==renderId||!list.isConnected||version!==request)return;next=null;loaded=[];$('#mm-q').value=saved.query;paintResults(saved,saved.saved_at);}catch(error){toast(error.message);}finally{if(button.isConnected)button.disabled=false;}});
+  }catch(error){if(list.isConnected)list.textContent=error.message;}};
+  try{$('#mm-q').value=localStorage.getItem('wa-mm-query-u'+state.user.id+'-'+view)||'';}catch{}
   fieldCamera('mm-q','Tra cứu MM',async code=>{await search(code);return 'Đã tra cứu theo '+modes[mmLookupField]+'.';},{singleShot:true});
   formAction('#mm-search',async b=>{await search(b.q);});
-  try{await search('');}catch{}
+  try{await search($('#mm-q').value);}catch{}
 }
 
 function downloadText(name, text) { const url = URL.createObjectURL(new Blob([text], { type:'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = name; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); }

@@ -2,12 +2,31 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import XLSX from '../lib/vendor/sheetjs-0.20.3.cjs';
 import { parseMMWorkbook,parseMMInWorker,MAX_MM_BYTES } from '../lib/mm-workbook.mjs';
-import { importMMRows,listMM } from '../lib/mm-data.mjs';
+import { importMMRows,listMM,lookupAndSaveMM } from '../lib/mm-data.mjs';
 import { openDatabase } from '../lib/db.mjs';
 import { stockData } from '../lib/stock-data.mjs';
 
 const headers=['S/L','LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY','Receipt DT','BP_CD','BP_NM','CUST_LBL_NO','LOT_NO','MAKER','LABEL_STS'];
 const row=(barcode,qty=2.125)=>['STORE','A-01','ITEM-TEST','Test item','10K 1608',barcode,qty,'2026-11-11','V001','Vendor','CUSTOMER','LOT-A','Maker','READY'];
+test('Spec deduplicates ITEM across boxes, sums decimal quantities, keeps locations and paginates unique items',()=>{
+ const db=openDatabase(':memory:');try{
+ const rows=Array.from({length:202},(_,i)=>({barcode:'SPEC-'+i,item_code:i<2?'DUP':'ITEM-'+String(i).padStart(4,'0'),item_name:'Part',spec:'120uF',location:i?'A2':'A1',qty:1.125,lot_no:'L'+i,source_sheet:'QA',source_row:i+1}));
+ importMMRows(db,{rows,sheets:['QA']},'Synthetic');const first=listMM(db,{q:'120uf',field:'spec'});assert.equal(first.matched,201);assert.equal(first.materials.length,200);assert.equal(first.next,200);const dup=first.materials.find(x=>x.item_code==='DUP');assert.equal(dup.qty,2.25);assert.equal(dup.box_count,2);assert.match(dup.location,/A1/);assert.match(dup.location,/A2/);const last=listMM(db,{q:'120uf',field:'spec',offset:200});assert.equal(last.materials.length,1);assert.equal(last.next,null);assert.equal(new Set([...first.materials,...last.materials].map(x=>x.item_code)).size,201);assert.equal(listMM(db,{q:'DUP',field:'item_code'}).matched,2);
+ }finally{db.close();}
+});
+test('saved MM lookups survive MM removal without treating old QTY as current inventory',()=>{
+ const db=openDatabase(':memory:');try{
+ db.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run('qa','QA','unused','viewer');importMMRows(db,{rows:[{barcode:'KEEP-BAR',item_code:'KEEP',item_name:'Part',spec:'120uF',location:'A1',qty:2.125,source_sheet:'QA',source_row:1}],sheets:['QA']},'Synthetic');const result=lookupAndSaveMM(db,{q:'120uF',field:'spec',offset:0},1);assert.ok(result.saved_id);db.exec('DELETE FROM mm_inventory');assert.equal(lookupAndSaveMM(db,{q:'120uF',field:'spec',offset:0},1).matched,0);const saved=JSON.parse(db.prepare('SELECT snapshot FROM mm_lookup_saved WHERE id=?').get(result.saved_id).snapshot);assert.equal(saved.materials[0].qty,2.125);assert.equal(saved.materials[0].item_code,'KEEP');assert.equal(listMM(db,{q:'KEEP',field:'item_code'}).matched,0);
+ }finally{db.close();}
+});
+test('saved MM lookup versions preserve earlier values when later nonempty MM results change',()=>{
+ const db=openDatabase(':memory:');try{
+ db.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run('qa','QA','unused','viewer');
+ importMMRows(db,{rows:[{barcode:'VERSION-BAR',item_code:'VERSION',item_name:'Part',spec:'120uF',location:'A1',qty:1.25,source_sheet:'QA',source_row:1}],sheets:['QA']},'Synthetic');
+ const a=lookupAndSaveMM(db,{q:'120uF',field:'spec',offset:0},1);assert.equal(lookupAndSaveMM(db,{q:'120uF',field:'spec',offset:0},1).saved_id,a.saved_id);
+ db.prepare("UPDATE mm_inventory SET qty=8.5,location='A2'").run();const b=lookupAndSaveMM(db,{q:'120uF',field:'spec',offset:0},1);assert.notEqual(a.saved_id,b.saved_id);assert.equal(JSON.parse(db.prepare('SELECT snapshot FROM mm_lookup_saved WHERE id=?').get(a.saved_id).snapshot).materials[0].qty,1.25);assert.equal(JSON.parse(db.prepare('SELECT snapshot FROM mm_lookup_saved WHERE id=?').get(b.saved_id).snapshot).materials[0].qty,8.5);
+ }finally{db.close();}
+});
 function workbook(type='biff8',sheets=[['First',[row('BAR-1')]],['Second',[row('BAR-2')]],['Third',[row('BAR-3')]]]){
   const wb=XLSX.utils.book_new();
   for(const [name,rows]of sheets)XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Report'],[],[],[],[],[],[],headers,...rows]),name);

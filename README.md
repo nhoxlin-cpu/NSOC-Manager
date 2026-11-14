@@ -209,3 +209,5 @@ ITEM-view Holding group editing now lets writers select multiple boxes (with pag
 CKD history supports admin deletion of one scan, selected scans or all scans in the selected SO, with confirmation. Evidence is removed with the scan and live progress is recalculated; SO/model data and other orders remain intact.
 
 The CKD scan-history view now spans all SOs. Its delete controls operate on global history, while order definitions and model lists remain unchanged. Samsung and unsold-order views continue to follow the selected SO.
+
+MM Spec results group matching boxes by ITEM, sum quantities and combine Locations. Authenticated lookups save private per-account result versions for later reference if MM changes or an ITEM disappears. Saved data is visibly historical and never substitutes for current stock. Search input is remembered per account/device.

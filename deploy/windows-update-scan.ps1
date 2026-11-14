@@ -7,8 +7,8 @@ if ($root -ne 'C:\apps\work-area') {throw 'Wrong Work Area deployment directory.
 $private=Join-Path $root 'private'
 $stage=Join-Path $private 'scan-update-stage'
 $manifest=Get-Content -LiteralPath (Join-Path $stage 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$allowed=@('server.mjs','public/app.js')
-if ($manifest.build -ne 'backup-guide-20261114-37' -or $manifest.files.Count -ne $allowed.Count) {throw 'Unexpected CKD update manifest.'}
+$allowed=@('server.mjs','public/app.js','lib/db.mjs','lib/mm-data.mjs')
+if ($manifest.build -ne 'mm-saved-spec-20261114-38' -or $manifest.files.Count -ne $allowed.Count) {throw 'Unexpected CKD update manifest.'}
 foreach ($directory in @($root,$private,$stage)) {
     if ((Get-Item -LiteralPath $directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 'Reparse deployment directory refused.'}
 }
