@@ -3,7 +3,7 @@ export async function renderCutting(ctx){
   const $=s=>document.querySelector(s);
   if(!document.querySelector('[data-cutting-css]')){const css=document.createElement('link');css.rel='stylesheet';css.href='/cutting.css?v=20261114-1';css.dataset.cuttingCss='';document.head.append(css);}
   $('#main').innerHTML=`${pageTop('Cắt chân linh kiện','Quy đổi AI → MI · MI → AI')}<div id='cutting-page'><div class='columns'><section class='panel'><div class='field-row'><div class='field'><label for='cut-direction'>Chiều quy đổi</label><select id='cut-direction'><option value='auto'>Tự nhận diện AI / MI</option><option value='AI_TO_MI'>AI → MI</option><option value='MI_TO_AI'>MI → AI</option></select></div><div class='field'><label for='cut-model'>Model (tùy chọn)</label><input id='cut-model' list='cut-model-list' maxlength='200' placeholder='Nhập hoặc chọn mã model'><datalist id='cut-model-list'></datalist></div></div><p class='muted' id='cut-file-status' role='status'>Đang tải bảng quy đổi…</p><div class='capture-actions'>${button('Quét camera','cut-camera','primary','scan')}<button type='button' class='button scan-square' id='choose-photo' aria-label='Tự chụp ảnh đối chiếu'>${icon('camera')}</button></div><p class='cut-pair-rule'>AI 1st ↔ MI 1st · AI 2nd ↔ MI 2nd</p><details id='cut-manual'><summary>Nhập mã bằng tay</summary><form id='cut-form' class='mt'><div class='field'><label for='cut-code'>Mã AI hoặc MI</label><input id='cut-code' required maxlength='200' autocapitalize='characters' spellcheck='false'></div><p class='form-message' role='alert'></p><button type='submit' class='button primary full'>Quy đổi mã</button></form></details></section><section class='panel'><h2>Kết quả quy đổi</h2><div id='cut-result' aria-live='polite'><p class='muted'>Quét mã AI hoặc MI để tìm mã tương ứng.</p></div></section></div><div id='cut-import-panel'></div><section class='panel'><div class='table-tools'><h2>Lịch sử quy đổi</h2>${button('Tải lại','cut-reload','small','sync')}</div><p class='muted' id='cut-history-total'></p><div id='cut-history'></div><button type='button' class='button full mt' id='cut-more' hidden>Xem thêm</button></section></div>`;
-  const root=$('#cutting-page');let active=false,lookupVersion=0,history=[],next=null,historyVersion=0,retry=null;
+  const root=$('#cutting-page');let active=null,lookupVersion=0,history=[],next=null,historyVersion=0,retry=null;
   const live=()=>root.isConnected;
   scanFlowBar($('.capture-actions'),true);updateCaptureUI();
   if(!canWrite()){$('#choose-photo').disabled=true;$('#choose-photo').classList.remove('enabled');$('#choose-photo').setAttribute('aria-pressed','false');}
@@ -16,13 +16,19 @@ export async function renderCutting(ctx){
   function codeButtons(container){container.querySelectorAll('[data-cut-code]').forEach(b=>b.onclick=()=>showCode(b.dataset.cutCode));}
   async function loadStatus(){
     const result=await api('/cutting/status');if(!live())return;
-    active=Boolean(result.batch);$('#cut-camera').disabled=!active;
-    $('#cut-file-status').textContent=result.batch?`${result.batch.name} · ${n(result.batch.row_count)} cặp quy đổi`:'Chưa có bảng quy đổi. Nhập Excel gốc để bắt đầu.';
+    active=Boolean(result.batch);
+    $('#cut-file-status').textContent=result.batch?`${result.batch.name} · ${n(result.batch.row_count)} cặp quy đổi`:'Có thể quét mã. Cần nhập bảng AI ↔ MI để quy đổi.';
+    $('#cut-import-shortcut')?.remove();
+    if(!active&&state.user.role==='admin'){const b=document.createElement('button');b.id='cut-import-shortcut';b.className='button small';b.textContent='Nhập bảng AI ↔ MI';b.onclick=()=>{const d=$('#cut-import-details');if(d){d.open=true;d.scrollIntoView({behavior:'smooth',block:'center'});}};$('#cut-file-status').after(b);}
     $('#cut-model-list').innerHTML=result.models.map(m=>`<option value='${e(m.model_code)}'>${e(m.model_name)}</option>`).join('');
     if(!active)$('#cut-result').innerHTML=resultHTML({batch:null});
   }
   async function convert(code,image=null){
-    if(!active)throw Error('Chưa có bảng quy đổi. Quản trị viên cần nhập file Excel.');
+    if(!active){
+      $('#cut-code').value=code;
+      $('#cut-result').innerHTML=`<p>Mã đã quét: <strong>${e(code)}</strong></p><div class='notice'>${active===null?'Chưa tải được bảng quy đổi. Tải lại trang để thử lại.':'Chưa có bảng AI ↔ MI. Cần nhập Excel gốc để tìm mã tương ứng.'}</div><p class='muted'>Chưa lưu lượt quy đổi.</p>`;
+      return {kind:'pending',displayValue:code,message:active===null?'Đã đọc mã · Chưa tải được bảng quy đổi':'Đã đọc mã · Chưa có bảng AI ↔ MI · Chưa lưu'};
+    }
     const version=++lookupVersion,model=$('#cut-model').value.trim(),direction=$('#cut-direction').value;
     $('#cut-code').value=code;$('#cut-result').textContent='Đang tra mã tương ứng…';
     let result;
@@ -37,7 +43,7 @@ export async function renderCutting(ctx){
     const targets=[...new Set(result.matches.map(m=>m.target_code))];
     return {kind:!result.matches.length?'error':result.multiple_targets||result.ambiguous_direction||result.truncated?'pending':'success',displayValue:targets.length===1&&!result.ambiguous_direction?targets[0]:undefined,message:!result.matches.length?'Chưa tìm thấy mã tương ứng':result.multiple_targets||result.ambiguous_direction?'Có nhiều kết quả · Đóng camera để xem model và cặp quy đổi':`${result.matches[0].direction==='AI_TO_MI'?'AI → MI':'MI → AI'} · ${result.matches[0].variant===1?'1st':'2nd'} · ${code} → ${targets[0]}`};
   }
-  $('#cut-camera').disabled=true;$('#cut-camera').onclick=()=>openScanner({title:'AI ↔ MI · Cắt chân',accountKey:'u'+state.user.id,continuous:state.continuousScan,onContinuousChange:setContinuousScan,autoCapture:canWrite()&&state.autoCapture,captureOnCode:true,onCode:(code,{image})=>convert(code,image),onManual:()=>{if(live()){$('#cut-manual').open=true;$('#cut-code').focus();}}});
+  $('#cut-camera').onclick=()=>openScanner({title:'AI ↔ MI · Cắt chân',accountKey:'u'+state.user.id,continuous:state.continuousScan,onContinuousChange:setContinuousScan,autoCapture:canWrite()&&state.autoCapture,captureOnCode:true,onCode:(code,{image})=>convert(code,image),onManual:()=>{if(live()){$('#cut-manual').open=true;$('#cut-code').focus();}}});
   $('#cut-form').onsubmit=async event=>{event.preventDefault();const submit=$('#cut-form button[type=submit]');submit.disabled=true;$('#cut-form .form-message').textContent='';try{await convert($('#cut-code').value);}catch(e){if(live())$('#cut-form .form-message').textContent=e.message;}finally{if(live())submit.disabled=false;}};
   async function loadHistory(more=false){
     const version=++historyVersion,result=await api('/cutting/scans'+(more&&next?'?before='+next:''));if(!live()||version!==historyVersion)return;
