@@ -1,6 +1,6 @@
 import { renderCutting } from '/cutting.js?v=20261114-1';
 import { renderCkd } from '/ckd.js?v=20261113-17';
-import { PhoneScanner, zxing } from '/scanner.js?v=20261114-20';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261114-21';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {

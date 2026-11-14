@@ -63,8 +63,11 @@ export class PhoneScanner {
     this.$('#scanner-flash').onclick=() => this.flash();
     this.$('#scanner-zoom').onchange=e => this.zoom(Number(e.target.value));
     this.$('#scanner-glare').onclick=()=>this.setGlare(!this.glare);this.$('#scanner-reset-view').onclick=()=>this.resetView();
-    this.$('#scanner-reset-view').insertAdjacentHTML('beforebegin','<button type="button" id="scanner-refocus" aria-label="Khởi động lại camera để lấy nét">Nét lại</button>');
+    this.$('#scanner-reset-view').insertAdjacentHTML('beforebegin','<button type="button" id="scanner-refocus" aria-label="Thử lấy nét lại">Nét lại</button>');
     this.$('.scanner-controls').insertAdjacentHTML('beforeend','<p id="scanner-focus-note" class="scanner-assist-note" hidden></p>');
+    this.$('.scanner-controls').insertAdjacentHTML('beforeend','<details class="scanner-optics"><summary>Camera / Lấy nét</summary><label>Ống kính <select id="scanner-lens" aria-label="Chọn ống kính camera"></select></label><label id="scanner-distance-row" hidden>Gần ↔ Xa <input id="scanner-distance" type="range" aria-label="Khoảng lấy nét"></label><p id="scanner-optics-status"></p></details>');
+    this.$('#scanner-lens').onchange=e=>this.changeLens(e.target.value);
+    this.$('#scanner-distance').oninput=e=>this.manualFocus(Number(e.target.value));
     this.$('#scanner-refocus').onclick=()=>{const f=this.$('#scanner-frame').getBoundingClientRect();this.focusAt(f.left+f.width/2,f.top+f.height/2,true);};
     this.$('#scanner-frame-smaller').onclick=()=>this.scaleFrame(.82);this.$('#scanner-frame-larger').onclick=()=>this.scaleFrame(1.22);
     this.installGestures();
@@ -124,8 +127,10 @@ export class PhoneScanner {
     this.Z=Z; this.hints=new Map([[Z.DecodeHintType.POSSIBLE_FORMATS,formats],[Z.DecodeHintType.TRY_HARDER,true]]); this.reader=new Z.MultiFormatReader();
   }
   async startVideo(deviceId) {
+    if(!deviceId&&!this.cameraDeviceId)deviceId=pref('lens-'+(this.options.accountKey||'default'),'')||undefined;
     this.releaseStream(); const epoch=this.epoch;
-    const stream=await navigator.mediaDevices.getUserMedia({ video:{ ...(deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}}),width:{ideal:1920},height:{ideal:1080},focusMode:{ideal:'continuous'} },audio:false });
+    const constraints={video:{...(deviceId?{deviceId:{exact:deviceId}}:{facingMode:{ideal:'environment'}}),width:{ideal:1920},height:{ideal:1080},focusMode:{ideal:'continuous'}},audio:false};
+    let stream;try{stream=await navigator.mediaDevices.getUserMedia(constraints);}catch(e){if(!deviceId||!['NotFoundError','OverconstrainedError'].includes(e.name))throw e;delete constraints.video.deviceId;constraints.video.facingMode={ideal:'environment'};stream=await navigator.mediaDevices.getUserMedia(constraints);}
     if (!this.active || epoch !== this.epoch) { stream.getTracks().forEach(t=>t.stop()); return; }
     this.stream=stream; this.video.srcObject=stream; await this.video.play();
     if (!this.active || epoch !== this.epoch) { this.releaseStream(); return; }
@@ -140,6 +145,29 @@ export class PhoneScanner {
     zoom.disabled=false;zoom.value=String(this.opticalZoom);zoom.title='Chọn mức zoom hoặc chụm hai ngón trên vùng camera';
     if (Array.isArray(caps.focusMode)&&caps.focusMode.includes('continuous')) try {await this.track.applyConstraints({advanced:[{focusMode:'continuous'}]});} catch {}
     this.layoutRoi();if(this.glare)await this.setGlare(true);
+    await this.opticsUI();
+  }
+  async opticsUI(){
+    const track=this.track;if(!track)return;const settings=track.getSettings?.()||{},modes=this.caps.focusMode||[],distance=this.caps.focusDistance;
+    const manual=modes.includes('manual')&&Number.isFinite(distance?.min)&&Number.isFinite(distance?.max)&&distance.max>distance.min;
+    this.$('#scanner-distance-row').hidden=!manual;
+    if(manual){const input=this.$('#scanner-distance');input.min=distance.min;input.max=distance.max;input.step=distance.step||((distance.max-distance.min)/100);input.value=Number.isFinite(settings.focusDistance)?settings.focusDistance:distance.min;}
+    this.$('#scanner-optics-status').textContent=modes.includes('continuous')||modes.includes('single-shot')?'Có điều khiển lấy nét tự động':manual?'Kéo thanh Gần ↔ Xa để chỉnh nét':'Ống kính này không cung cấp điều khiển lấy nét. Thử chọn ống kính khác.';
+    const select=this.$('#scanner-lens');select.replaceChildren(new Option(track.label||'Camera hiện tại',settings.deviceId||''));
+    try{const devices=await navigator.mediaDevices.enumerateDevices();if(!this.active||this.track!==track)return;for(const d of devices.filter(d=>d.kind==='videoinput'&&d.deviceId!==settings.deviceId&&!/front|user|facetime/i.test(d.label)))select.add(new Option(d.label||'Camera '+(select.options.length+1),d.deviceId));}catch{}
+    select.disabled=select.options.length<2;
+  }
+  async changeLens(device){
+    if(this.focusBusy||!device)return;this.focusBusy=true;const previous=this.cameraDeviceId;
+    try{await this.startVideo(device);remember('lens-'+(this.options.accountKey||'default'),this.cameraDeviceId||device);}
+    catch{try{await this.startVideo(previous);}catch{}if(this.active)this.$('#scanner-optics-status').textContent='Không mở được ống kính đã chọn. Thử ống kính khác.';}
+    finally{this.focusBusy=false;}
+  }
+  async manualFocus(value){
+    clearTimeout(this.focusRestore);this.pendingFocus=value;if(this.manualFocusBusy)return;this.manualFocusBusy=true;
+    try{while(this.pendingFocus!==null&&this.active&&this.track){const distance=this.pendingFocus;this.pendingFocus=null;await this.track.applyConstraints({advanced:[{focusMode:'manual',focusDistance:distance}]});if(this.active)this.$('#scanner-optics-status').textContent='Đang chỉnh nét thủ công';}}
+    catch{if(this.active)this.$('#scanner-optics-status').textContent='Camera từ chối chỉnh nét thủ công.';}
+    finally{this.manualFocusBusy=false;}
   }
   capture() {
     if (this.video.readyState < 2 || !this.video.videoWidth || !this.video.videoHeight) return false;
@@ -333,7 +361,8 @@ export class PhoneScanner {
     this.focusBusy=true;
     try{
       let applied=false,pointApplied=false;
-      if(!forceRestart&&mode){
+      if(mode){
+        if(modes.includes('manual'))try{await track.applyConstraints({advanced:[{focusMode:'manual'}]});}catch{}
         if(pointSupport)try{await track.applyConstraints({advanced:[{focusMode:mode,pointsOfInterest:[point]}]});applied=true;pointApplied=true;}catch{}
         if(!applied)try{await track.applyConstraints({advanced:[{focusMode:modes.includes('continuous')?'continuous':mode}]});applied=true;}catch{}
       }
@@ -345,7 +374,7 @@ export class PhoneScanner {
         ring.dataset.state='working';ring.querySelector('span').textContent='Mở lại camera…';
         const result=await this.restartForFocus();if(!this.active||epoch!==this.epoch)return;
         ring.dataset.state=result;ring.querySelector('span').textContent=result==='waiting'?'Chờ camera ổn định':'Đã mở lại camera';
-        const note=this.$('#scanner-focus-note');note.hidden=false;note.textContent='Nếu ảnh còn mờ, đưa máy xa nhãn hơn rồi tăng zoom.';
+        const note=this.$('#scanner-focus-note');note.hidden=false;note.textContent='Chưa điều khiển được nét. Mở Camera / Lấy nét để chọn ống kính khác.';
       }
     }catch{if(this.active&&epoch===this.epoch){ring.dataset.state='error';ring.querySelector('span').textContent='Thử Nét lại';const note=this.$('#scanner-focus-note');note.hidden=false;note.textContent='Chưa mở lại được camera. Bấm Nét lại để thử lại.';}}
     finally{this.focusBusy=false;if(this.active&&epoch===this.epoch)this.focusHide=setTimeout(()=>{ring.hidden=true;},2200);}

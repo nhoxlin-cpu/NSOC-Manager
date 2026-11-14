@@ -176,3 +176,5 @@ Quản trị viên nhập Excel gốc `.xls` / `.xlsx` tối đa 32 MB tại **N
 Lịch sử quy đổi tách riêng, lưu kết quả tại thời điểm quét, người quét và ảnh khi bật nút camera. Nhập bảng mới không đổi lịch sử cũ. Admin / inspector lưu lượt; viewer chỉ tra cứu. Cần kết nối server; lỗi mạng hiện thông báo để thử lại, cùng yêu cầu không lưu trùng. BOM QTY là thông tin tham khảo, không phải số lượng đã cắt.
 
 Scanner frame: use the minus/plus buttons or pinch inside the green frame to resize it. Pinch outside the frame to zoom the camera. Tap to request focus; when point focus is unavailable, autofocus is retried by reopening the same camera. The Refocus button preserves the frame, zoom and scan session. Actual focus depends on the camera and browser.
+
+Camera / Focus settings now list available non-front lenses and remember the chosen device per account on the browser. Manual focus distance is exposed only when the track advertises manual mode and a valid range. Refocus retriggers available autofocus before falling back to reopening. These API requests do not prove optical sharpness; actual phone validation is required.
