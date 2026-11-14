@@ -1,6 +1,15 @@
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
-import {fitScanRect,fitBarcodeRect,resizeScanRect,enhanceGlare,cameraPoint} from '../public/scanner-tools.js';
+import {fitScanRect,fitBarcodeRect,resizeScanRect,enhanceGlare,cameraPoint,stockBarcode} from '../public/scanner-tools.js';
+
+test('Stock camera prefers Barcode-no and ignores standalone ITEM labels',()=>{
+  assert.equal(stockBarcode(['3324111153NM','P2611070001642']),'P2611070001642');
+  assert.equal(stockBarcode(['P2611070001642','3324111153NM']),'P2611070001642');
+  assert.equal(stockBarcode(['3324111065NF','1234567890ABC']),'');
+  assert.equal(stockBarcode(['ITEM=3324111153NM']),'');
+  assert.equal(stockBarcode(['OTHER-BOX',' p2611070001642 ']),'P2611070001642');
+  assert.equal(stockBarcode(['OTHER-BOX']),'OTHER-BOX');
+});
 
 test('moving the scan area stays inside the available view and QR stays square',()=>{
   assert.deepEqual(fitScanRect({x:-90,y:500,w:200,h:90},320,240),{x:0,y:150,w:200,h:90});

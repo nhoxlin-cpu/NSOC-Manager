@@ -1,4 +1,4 @@
-import { fitScanRect,fitBarcodeRect,resizeScanRect,enhanceGlare,cameraPoint } from '/scanner-tools.js?v=20261114-19';
+import { fitScanRect,fitBarcodeRect,resizeScanRect,enhanceGlare,cameraPoint,stockBarcode } from '/scanner-tools.js?v=20261114-24';
 import { hsCode } from '/hs-code.js?v=20261114-19';
 const symbols = {
   continuous:'<path d="M20 7a9 9 0 0 0-15-3L2 7m0-5v5h5M4 17a9 9 0 0 0 15 3l3-3m0 5v-5h-5"/>',
@@ -220,8 +220,16 @@ export class PhoneScanner {
     if (!this.busy && !this.singlePaused && !this.changing && !this.zoomApplying && !this.focusBusy && !this.gesture && this.capture()) {
       let value='';
       try {
-        if (this.detector) value=(await this.detector.detect(this.canvas))[0]?.rawValue || '';
-        else if (this.reader) { const bitmap=new this.Z.BinaryBitmap(new this.Z.HybridBinarizer(new this.Z.HTMLCanvasElementLuminanceSource(this.canvas))); value=this.reader.decode(bitmap,this.hints).getText(); }
+        if (this.detector) {const values=(await this.detector.detect(this.canvas)).map(r=>r.rawValue);value=this.options.mode==='Stock'?stockBarcode(values):values[0]||'';if(this.options.mode==='Stock'&&values.length&&!value)this.$('#scanner-status').textContent='Đang thấy mã ITEM · Đưa Barcode-no vào khung';}
+        else if (this.reader) {
+          const values=[];const decode=canvas=>{try{const bitmap=new this.Z.BinaryBitmap(new this.Z.HybridBinarizer(new this.Z.HTMLCanvasElementLuminanceSource(canvas)));values.push(this.reader.decode(bitmap,this.hints).getText());}catch{}};decode(this.canvas);
+          if(this.options.mode==='Stock'){
+            // Isolate horizontal labels so a nearby ITEM cannot hide Barcode-no.
+            this.stockCanvas??=document.createElement('canvas');const crop=this.stockCanvas;crop.width=this.canvas.width;crop.height=Math.max(1,Math.round(this.canvas.height*.5));
+            for(const y of [0,.25,.5]){crop.getContext('2d').drawImage(this.canvas,0,Math.round(this.canvas.height*y),this.canvas.width,crop.height,0,0,crop.width,crop.height);decode(crop);}
+            value=stockBarcode(values);if(values.length&&!value)this.$('#scanner-status').textContent='Đang thấy mã ITEM · Đưa Barcode-no vào khung';
+          }else value=values[0]||'';
+        }
       } catch { /* No readable code in this frame. */ }
       if (!this.active || epoch !== this.epoch) return;
       value=clean(value);

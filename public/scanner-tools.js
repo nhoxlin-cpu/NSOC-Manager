@@ -1,4 +1,9 @@
 const clamp=(v,lo,hi)=>Math.min(hi,Math.max(lo,v));
+export function stockBarcode(values){
+  const codes=[...new Set(values.map(v=>String(v??'').trim().toUpperCase()).filter(Boolean))];
+  const isItem=v=>/^[A-Z0-9]{10}[A-Z]{2,3}$/.test(v)||/^ITEM(?:\s*CODE)?\s*[:=]/.test(v);
+  return codes.find(v=>/^P\d{8,}$/.test(v))||codes.find(v=>!isItem(v))||'';
+}
 export function fitScanRect(rect,width,height,square=false) {
   width=Math.max(1,width); height=Math.max(1,height);
   let w=clamp(rect.w,Math.min(120,width),width),h=clamp(rect.h,Math.min(70,height),height);
