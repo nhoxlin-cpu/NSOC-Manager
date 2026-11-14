@@ -105,3 +105,15 @@ test('XLSX reader handles inline text safely and rejects malformed or oversized 
   assert.throws(()=>parseCkdWorkbook(excel([['Not an SO']])));
   for(const bytes of [Buffer.alloc(0),Buffer.from('not excel'),Buffer.alloc(19*1024*1024)])assert.throws(()=>readWorkbook(bytes));
 });
+
+test('global CKD deletion crosses SOs without deleting orders and cutoff preserves newer scans',()=>{
+const {db,pair,save,parsed}=fixture();try{
+const a=save(),other=importCkdWorkbook(db,parsed,'Global other SO',1),b=save({workbook_id:other.id});
+assert.equal(deleteCkdHistory(db,{scope:'all',ids:[a.id,b.id]},1).deleted,2);
+assert.equal(db.prepare('SELECT COUNT(*) n FROM ckd_orders').get().n,4);
+const c=save(),d=save({workbook_id:other.id});
+assert.equal(deleteCkdHistory(db,{scope:'all',all:true,through_id:c.id},1).deleted,1);
+assert.ok(db.prepare('SELECT id FROM ckd_checks WHERE id=?').get(d.id));
+assert.equal(db.prepare('SELECT workbook_id FROM ckd_deleted_requests WHERE check_id=?').get(b.id).workbook_id,other.id);
+}finally{db.close();}
+});
