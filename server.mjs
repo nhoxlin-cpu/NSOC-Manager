@@ -94,7 +94,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'holding-v2-20261114-28' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'hs-bulk-20261114-29' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -317,13 +317,13 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if(req.method==='POST'&&path==='/api/scans/delete'){
         adminAccess(u);const b=await jsonBody(req);
-        if(b.mode!=='Stock')fail(400,'Chỉ xóa hàng loạt lịch sử Stock.');
+        if(!['HS','Stock'].includes(b.mode))fail(400,'Chọn lịch sử HS hoặc Stock cần xóa.');
         const removed=transaction(db,()=>{
-          if(b.all===true){if(!Number.isSafeInteger(b.through_id)||b.through_id<1)fail(400,'Thiếu mốc lịch sử cần xóa.');return db.prepare("DELETE FROM scans WHERE mode='Stock' AND id<=?").run(b.through_id).changes;}
+          if(b.all===true){if(!Number.isSafeInteger(b.through_id)||b.through_id<1)fail(400,'Thiếu mốc lịch sử cần xóa.');return db.prepare('DELETE FROM scans WHERE mode=? AND id<=?').run(b.mode,b.through_id).changes;}
           if(!Array.isArray(b.ids)||!b.ids.length||b.ids.length>1000||b.ids.some(id=>!Number.isSafeInteger(id)||id<1))fail(400,'Chọn từ 1 đến 1.000 lượt quét.');
           const ids=[...new Set(b.ids)],marks=ids.map(()=>'?').join(',');
-          if(db.prepare(`SELECT COUNT(*) n FROM scans WHERE mode='Stock' AND id IN (${marks})`).get(...ids).n!==ids.length)fail(409,'Danh sách đã thay đổi. Tải lại lịch sử rồi chọn lại.');
-          return db.prepare(`DELETE FROM scans WHERE mode='Stock' AND id IN (${marks})`).run(...ids).changes;
+          if(db.prepare(`SELECT COUNT(*) n FROM scans WHERE mode=? AND id IN (${marks})`).get(b.mode,...ids).n!==ids.length)fail(409,'Danh sách đã thay đổi. Tải lại lịch sử rồi chọn lại.');
+          return db.prepare(`DELETE FROM scans WHERE mode=? AND id IN (${marks})`).run(b.mode,...ids).changes;
         });return send(res,200,{ok:true,deleted:removed});
       }
       if (req.method === 'POST' && path === '/api/scans') {

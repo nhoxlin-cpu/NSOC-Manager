@@ -31,6 +31,21 @@ async function login(username) {
   return { cookie:r.headers.get('set-cookie').split(';')[0], csrf:r.data.csrf };
 }
 const box = overrides => ({ request_id:randomUUID(), delivery:'PN-001', box_ref:randomUUID(), item_code:'ITEM-1', label_a:'bn83-test', label_b:' BN83-TEST ', maker:'yageo', qty:5000, ...overrides });
+test('HS selected/all deletion is scoped, authorized, atomic and preserves newer scans',async()=>{
+  const insert=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image) VALUES (?,?,?,1,?,?)');
+  const seed=mode=>Number(insert.run(randomUUID(),'BULK-HS-FIXTURE',mode,'image/png',Buffer.from('fixture')).lastInsertRowid);
+  const a=seed('HS'),b=seed('HS'),stock=seed('Stock'),label=seed('Label');
+  const body={mode:'HS',ids:[a]};
+  assert.equal((await request('/api/scans/delete',inspector,'POST',body)).status,403);
+  assert.equal((await request('/api/scans/delete',viewer,'POST',body)).status,403);
+  assert.equal((await request('/api/scans/delete',admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
+  assert.equal((await request('/api/scans/delete',admin,'POST',{mode:'HS',ids:[a,stock]})).status,409);assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(a));
+  assert.equal((await request('/api/scans/delete',admin,'POST',body)).data.deleted,1);assert.equal((await request('/api/scans/'+a+'/image',admin)).status,404);
+  const snapshot=(await request('/api/scans?mode=HS',admin)).data.max_id,newer=seed('HS');
+  assert.equal((await request('/api/scans/delete',admin,'POST',{mode:'HS',all:true,through_id:snapshot})).data.deleted,1);
+  for(const id of [newer,stock,label])assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(id));
+  assert.equal(db.prepare('SELECT id FROM scans WHERE id=?').get(b),undefined);db.prepare('DELETE FROM scans WHERE id IN (?,?,?)').run(newer,stock,label);
+});
 test('Stock bulk deletion is scoped, authorized and atomic; ITEM totals cover all pages and preserve missing QTY',async()=>{
   const item='BULK-TOTAL-ITEM';
   const insert=db.prepare("INSERT INTO scans(request_id,barcode,mode,user_id,quantity) VALUES (?,?,'Stock',1,?)");
@@ -43,7 +58,7 @@ test('Stock bulk deletion is scoped, authorized and atomic; ITEM totals cover al
   assert.equal((await request(endpoint,admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
   const hs=Number(db.prepare("INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,'HS',1)").run(randomUUID(),'BULK-HS-KEEP').lastInsertRowid);
   assert.equal((await request(endpoint,admin,'POST',{mode:'Stock',ids:[ids[0],hs]})).status,409);assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(ids[0]));
-  assert.equal((await request(endpoint,admin,'POST',{mode:'HS',all:true,through_id:hs})).status,400);
+  assert.equal((await request(endpoint,admin,'POST',{mode:'Label',all:true,through_id:hs})).status,400);
   const deleted=await request(endpoint,admin,'POST',body);assert.equal(deleted.data.deleted,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM scan_stock WHERE scan_id IN (?,?)').get(...body.ids).n,0);
   const after=(await request('/api/scans?mode=Stock',admin)).data;assert.equal(after.stock_summary.find(r=>r.item_code===item).total_quantity,51.5);
   const newer=Number(insert.run(randomUUID(),'BULK-NEWER',7).lastInsertRowid);
