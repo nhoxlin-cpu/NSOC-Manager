@@ -92,7 +92,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'stock-barcode-20261114-24' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'stock-history-20261114-25' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -275,6 +275,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       const scanSelect = `SELECT s.id,s.barcode,s.raw_barcode,s.mode,s.quantity,s.prior_count,s.created_at,u.name AS scanner,COALESCE(ss.item_code,m.item_code) AS item_code,COALESCE(ss.item_name,m.item) AS item_name,COALESCE(ss.maker,m.maker) AS maker,COALESCE(ss.vendor,m.vendor) AS vendor,ss.lot_no,ss.quantity_source,CASE WHEN s.image IS NULL THEN 0 ELSE 1 END has_image FROM scans s JOIN users u ON u.id=s.user_id LEFT JOIN scan_stock ss ON ss.scan_id=s.id LEFT JOIN materials m ON m.item_code=COALESCE((SELECT item_code FROM materials WHERE samsung=s.barcode),s.barcode)`;
       const stockInfo=id=>db.prepare(`${scanSelect} WHERE s.id=?`).get(id);
+      const stockSummary=()=>db.prepare(`SELECT UPPER(TRIM(item_code)) item_code,MAX(item_name) item_name,COUNT(*) scans,COUNT(quantity) quantity_count,SUM(quantity) total_quantity FROM (${scanSelect} WHERE s.mode='Stock') WHERE TRIM(COALESCE(item_code,''))<>'' GROUP BY UPPER(TRIM(item_code)) ORDER BY item_code`).all();
       const scanCount=(barcode,mode)=>db.prepare('SELECT COUNT(*) n FROM scans WHERE barcode=? AND mode=?').get(barcode,mode).n;
       const scanMode=()=>{
         const mode=url.searchParams.get('mode');
@@ -290,8 +291,19 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const mode=scanMode();
         const before = Number(url.searchParams.get('before')) || Number.MAX_SAFE_INTEGER;
         const rows = db.prepare(`${scanSelect} WHERE s.id < ? AND (? IS NULL OR s.mode=?) ORDER BY s.id DESC LIMIT 100`).all(before,mode,mode);
-        const totals=db.prepare('SELECT COUNT(*) total,SUM(quantity) total_quantity,COUNT(quantity) quantity_count FROM scans WHERE (? IS NULL OR mode=?)').get(mode,mode);
-        return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, mode, ...totals });
+        const totals=db.prepare('SELECT COUNT(*) total,SUM(quantity) total_quantity,COUNT(quantity) quantity_count,COALESCE(MAX(id),0) max_id FROM scans WHERE (? IS NULL OR mode=?)').get(mode,mode);
+        return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, mode, ...totals,...(mode==='Stock'?{stock_summary:stockSummary()}:{} ) });
+      }
+      if(req.method==='POST'&&path==='/api/scans/delete'){
+        adminAccess(u);const b=await jsonBody(req);
+        if(b.mode!=='Stock')fail(400,'Chỉ xóa hàng loạt lịch sử Stock.');
+        const removed=transaction(db,()=>{
+          if(b.all===true){if(!Number.isSafeInteger(b.through_id)||b.through_id<1)fail(400,'Thiếu mốc lịch sử cần xóa.');return db.prepare("DELETE FROM scans WHERE mode='Stock' AND id<=?").run(b.through_id).changes;}
+          if(!Array.isArray(b.ids)||!b.ids.length||b.ids.length>1000||b.ids.some(id=>!Number.isSafeInteger(id)||id<1))fail(400,'Chọn từ 1 đến 1.000 lượt quét.');
+          const ids=[...new Set(b.ids)],marks=ids.map(()=>'?').join(',');
+          if(db.prepare(`SELECT COUNT(*) n FROM scans WHERE mode='Stock' AND id IN (${marks})`).get(...ids).n!==ids.length)fail(409,'Danh sách đã thay đổi. Tải lại lịch sử rồi chọn lại.');
+          return db.prepare(`DELETE FROM scans WHERE mode='Stock' AND id IN (${marks})`).run(...ids).changes;
+        });return send(res,200,{ok:true,deleted:removed});
       }
       if (req.method === 'POST' && path === '/api/scans') {
         writeAccess(u); const b = await jsonBody(req), id = requestId(b.request_id);
@@ -331,7 +343,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         else fail(400, 'Loại báo cáo không hợp lệ.');
         const label=kind==='scans'?'Lịch sử quét mã':kind==='holding'?'Giao dịch Holding':'Xác nhận box';
         const mode=kind==='scans'?(url.searchParams.get('mode')||'Tất cả loại quét'):'';
-        const buffer=reportWorkbook([{name:'Chi tiết',title:label,rows}],{title:'BÁO CÁO '+(kind==='scans'?'QUÉT MÃ':kind==='holding'?'HOLDING':'XÁC NHẬN BOX'),scope:mode,exportedBy:u.name});
+        const sheets=[{name:'Chi tiết',title:label,rows}];
+        if(kind==='scans'&&mode==='Stock')sheets.unshift({name:'Total theo ITEM',title:'TỔNG QTY STOCK THEO ITEM',rows:[['STT','ITEM code','Item NM','Số lượt quét','Lượt có QTY','Total QTY'],...stockSummary().map((r,i)=>[i+1,r.item_code,r.item_name||'',r.scans,r.quantity_count,r.total_quantity??''])]});
+        const buffer=reportWorkbook(sheets,{title:'BÁO CÁO '+(kind==='scans'?'QUÉT MÃ':kind==='holding'?'HOLDING':'XÁC NHẬN BOX'),scope:mode,exportedBy:u.name});
         res.writeHead(200, { 'Content-Type': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', 'Content-Disposition': `attachment; filename="work-area-${kind}.xlsx"` }); return res.end(buffer);
       }
       function checkBox(b) {

@@ -31,6 +31,26 @@ async function login(username) {
   return { cookie:r.headers.get('set-cookie').split(';')[0], csrf:r.data.csrf };
 }
 const box = overrides => ({ request_id:randomUUID(), delivery:'PN-001', box_ref:randomUUID(), item_code:'ITEM-1', label_a:'bn83-test', label_b:' BN83-TEST ', maker:'yageo', qty:5000, ...overrides });
+test('Stock bulk deletion is scoped, authorized and atomic; ITEM totals cover all pages and preserve missing QTY',async()=>{
+  const item='BULK-TOTAL-ITEM';
+  const insert=db.prepare("INSERT INTO scans(request_id,barcode,mode,user_id,quantity) VALUES (?,?,'Stock',1,?)");
+  const ids=[];for(let i=0;i<105;i++){const id=Number(insert.run(randomUUID(),'BULK-'+i,i===0?null:.5).lastInsertRowid);ids.push(id);db.prepare('INSERT INTO scan_stock(scan_id,item_code,item_name,quantity_source) VALUES (?,?,?,?)').run(id,item,'Test total','MM');}
+  const list=await request('/api/scans?mode=Stock',admin);assert.equal(list.data.scans.length,100);
+  const group=list.data.stock_summary.find(r=>r.item_code===item);assert.equal(group.scans,105);assert.equal(group.quantity_count,104);assert.equal(group.total_quantity,52);
+  const endpoint='/api/scans/delete',body={mode:'Stock',ids:[ids[0],ids[1]]};
+  assert.equal((await request(endpoint,null,'POST',body)).status,401);
+  for(const session of [inspector,viewer])assert.equal((await request(endpoint,session,'POST',body)).status,403);
+  assert.equal((await request(endpoint,admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
+  const hs=Number(db.prepare("INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,'HS',1)").run(randomUUID(),'BULK-HS-KEEP').lastInsertRowid);
+  assert.equal((await request(endpoint,admin,'POST',{mode:'Stock',ids:[ids[0],hs]})).status,409);assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(ids[0]));
+  assert.equal((await request(endpoint,admin,'POST',{mode:'HS',all:true,through_id:hs})).status,400);
+  const deleted=await request(endpoint,admin,'POST',body);assert.equal(deleted.data.deleted,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM scan_stock WHERE scan_id IN (?,?)').get(...body.ids).n,0);
+  const after=(await request('/api/scans?mode=Stock',admin)).data;assert.equal(after.stock_summary.find(r=>r.item_code===item).total_quantity,51.5);
+  const newer=Number(insert.run(randomUUID(),'BULK-NEWER',7).lastInsertRowid);
+  assert.equal((await request(endpoint,admin,'POST',{mode:'Stock',all:true,through_id:after.max_id})).status,200);
+  assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(newer));assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(hs));
+  db.prepare('DELETE FROM scans WHERE id IN (?,?)').run(newer,hs);
+});
 before(async () => {
   db = openDatabase(':memory:'); const hash = await hashPassword(password);
   for (const role of ['admin','inspector','viewer']) db.prepare('INSERT INTO users(username,name,password,role) VALUES (?,?,?,?)').run(role, role, hash, role);
