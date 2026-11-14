@@ -115,10 +115,12 @@ function formAction(selector, handler) {
 const routes = [['home', 'home', 'Trang chủ'], ['scan', 'scan', 'Quét mã'], ['ckd', 'ckd', 'Kiểm tra CKD'], ['cut', 'cut', 'Cắt chân linh kiện'], ['holding', 'box', 'Holding room'], ['mm', 'search', 'Tra cứu MM'], ['assistant', 'assistant', 'Trợ lý'], ['account', 'user', 'Tài khoản']];
 const shortLabels={home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt chân',holding:'Holding',mm:'Tra MM',assistant:'Trợ lý',account:'Tài khoản'};
 function renderNavigation() {
+  const backupLink=$('#backup-menu-link');if(backupLink)backupLink.hidden=state.user?.role!=='admin';
   const keys=state.user ? state.navigation : defaultNavigation;
   $('.bottom-nav').innerHTML=keys.filter(key=>routes.some(r=>r[0]===key)).map(key=>{const route=routes.find(r=>r[0]===key);return `<a href="#${key}" data-nav="${key}" aria-label="${route[2]}" ${state.page===key?'class="active" aria-current="page"':''}>${icon(route[1])}<span>${shortLabels[key]}</span></a>`;}).join('');
 }
 $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
+$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="backup-menu-link" href="#backup" hidden>${icon('download')} Sao lưu máy chủ</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} T?i APK t? server</a>`);
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
@@ -150,6 +152,7 @@ async function account() {
   }
   const u = state.user;
   $('#main').innerHTML = `${pageTop('Tài khoản', 'Hồ sơ & quyền truy cập', button('Đăng xuất','logout','','logout'))}<div class="account-layout"><div class="columns"><section class="panel"><div class="profile"><div class="avatar">${escape(u.name.split(' ').map(x => x[0]).filter(Boolean).slice(-2).join('').toUpperCase())}</div><div><h2>${escape(u.name)}</h2><p>@${escape(u.username)}</p></div></div><span class="badge green">${icon('shield')} ${roleName(u.role)}</span><hr class="divider"><h3>Quyền của bạn</h3><ul class="permissions">${['Tra cứu dữ liệu & xuất báo cáo', ...(canWrite() ? ['Lưu lượt quét & xác nhận CKD','Nhập, xuất vật tư Holding'] : []), ...(u.role === 'admin' ? ['Nhập MM, tạo tài khoản & xóa lượt quét'] : [])].map(x => `<li>${icon('check')}${x}</li>`).join('')}</ul><p class="subtle">Phiên đăng nhập có hiệu lực tối đa 8 giờ.</p></section><section class="panel"><h2>Đổi mật khẩu</h2><form id="password-form">${field('Mật khẩu hiện tại','oldPassword',{type:'password',autocomplete:'current-password'})}${field('Mật khẩu mới','password',{type:'password',autocomplete:'new-password',extra:'minlength="8" maxlength="128"',placeholder:'Ít nhất 8 ký tự'})}${field('Nhập lại mật khẩu mới','confirm',{type:'password',autocomplete:'new-password',extra:'minlength="8" maxlength="128"'})}<p class="form-message" role="alert"></p><button class="button full" type="submit">Lưu mật khẩu mới</button></form></section></div>${u.role === 'admin' ? `<section class="panel"><h2>Cấp tài khoản</h2><p class="muted">Chọn đúng quyền cần thiết cho từng người dùng.</p><form id="user-form"><div class="field-row">${field('Tên đăng nhập','username',{extra:'pattern="[a-z0-9._-]{3,64}" minlength="3" maxlength="64" autocapitalize="none"'})}${field('Họ tên','name',{extra:'maxlength="100"'})}</div><div class="field-row">${field('Mật khẩu ban đầu','password',{type:'password',autocomplete:'new-password',extra:'minlength="8" maxlength="128"'})}<div class="field"><label for="role">Quyền truy cập</label><select id="role" name="role"><option value="inspector">Nhân viên kiểm tra</option><option value="viewer">Chỉ xem</option><option value="admin">Quản trị viên</option></select></div></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">${icon('plus')} Tạo tài khoản</button></form><div id="users-list" class="mt"></div></section>` : ''}</div>`;
+  if(u.role==='admin')$('.account-layout').insertAdjacentHTML('afterbegin',`<section class="panel"><h2>Sao lưu máy chủ</h2><p class="muted">Dữ liệu, ảnh scan và bộ khôi phục VPS.</p><a class="button primary" href="#backup">${icon('download')} Mở bản sao lưu</a></section>`);
   $('#logout').onclick = async () => { try { await api('/logout', { method:'POST' }); state.user = null; state.csrf = null; state.image = null; state.imageName = '';renderNavigation();render(); toast('Đã đăng xuất.'); } catch(e) { toast(e.message); } };
   formAction('#password-form', async b => { if (b.password !== b.confirm) throw Error('Hai mật khẩu mới không khớp.'); await api('/password', { method:'POST', data:b }); state.user = null; state.csrf = null;renderNavigation();render(); toast('Đã đổi mật khẩu. Vui lòng đăng nhập lại.'); });
   formAction('#user-form', async (b, f) => { await api('/users', { method:'POST', data:b }); f.reset(); toast('Đã tạo tài khoản.'); await usersList(); });
@@ -434,11 +437,20 @@ async function cutting() {
   });
 }
 
+async function backup(){
+  if(!state.user){$('#main').innerHTML=needsLogin('Sao lưu máy chủ');return;}
+  if(state.user.role!=='admin'){$('#main').innerHTML=pageTop('Sao lưu máy chủ','')+'<section class="panel">Chỉ tài khoản quản trị được tải bản sao lưu.</section>';return;}
+  $('#main').innerHTML=pageTop('Sao lưu máy chủ','Khôi phục Work Area trên VPS khác')+'<section class="panel" id="backup-panel"><p role="status">Đang kiểm tra bản sao lưu…</p></section>';
+  const panel=$('#backup-panel');
+  try{const info=await api('/admin/recovery-backup/info');if(!panel.isConnected)return;const date=info.created_at?new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(info.created_at)):'';
+    panel.innerHTML=`<span class="badge green">Có bản sao lưu</span><h2 class="mt">Bản sao lưu đã tạo</h2><p class="muted">${date?escape(date)+' · GMT+7 · ':''}ZIP · ${number(Math.round(info.size_bytes/100000)/10)} MB</p><p>Dữ liệu, tài khoản, ảnh scan, mã nguồn và hướng dẫn khôi phục.</p><a class="button primary full mt" id="backup-download" href="/api/admin/recovery-backup" download="WorkArea-Recovery.zip">${icon('download')} Tải bản sao lưu ZIP</a><p class="muted mt">Lưu file ở máy hoặc cloud riêng ngoài VPS. Nút tải lấy bản đã lưu; chưa có sao lưu tự động.</p>`;
+  }catch(error){if(panel.isConnected)panel.innerHTML=`<p role="alert">${escape(error.message)}</p><button class="button" id="backup-retry">Thử lại</button>`;$('#backup-retry')?.addEventListener('click',backup);}
+}
 async function render() {
   const id = ++renderId; const page = location.hash.slice(1).split('?')[0] || 'home'; state.page = page;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting }[page];
+  const route = { home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup }[page];
   document.title = `${routes.find(r => r[0] === page)?.[2] || 'Trang chủ'} · Work Area`;
   try { await (route || home)(id); } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }

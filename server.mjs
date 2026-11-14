@@ -101,7 +101,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'recovery-download-20261114-35' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'backup-page-20261114-36' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -133,10 +133,10 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const u = sessionUser(db, req.headers.cookie);
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');
       if (mutating && req.headers['x-csrf-token'] !== u.csrf) fail(403, 'Phiên thao tác không hợp lệ. Hãy tải lại trang.');
-      if(req.method==='GET'&&path==='/api/admin/recovery-backup'){
+      if(req.method==='GET'&&['/api/admin/recovery-backup','/api/admin/recovery-backup/info'].includes(path)){
         adminAccess(u);let file;
         try{file=await open(recoveryArchive,'r');}catch(error){if(error.code==='ENOENT')fail(404,'Chưa có bản sao lưu để tải.');throw error;}
-        try{const info=await file.stat();res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="WorkArea-Recovery.zip"','Content-Length':info.size,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});await pipeline(file.createReadStream(),res);}finally{await file.close();}
+        try{const info=await file.stat();if(path.endsWith('/info')){let metadata={};try{metadata=JSON.parse(await readFile(recoveryArchive+'.json','utf8'));}catch(error){if(error.code!=='ENOENT')throw error;}return send(res,200,{size_bytes:info.size,created_at:metadata.createdAt||null,build:metadata.build||null});}res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="WorkArea-Recovery.zip"','Content-Length':info.size,'Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});await pipeline(file.createReadStream(),res);}finally{await file.close();}
         return;
       }
       if(path.startsWith('/api/holding/v2/')){
