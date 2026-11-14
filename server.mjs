@@ -14,6 +14,7 @@ import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
 import { importMMRows,listMM } from './lib/mm-data.mjs';
 import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
 import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
+import {initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -66,6 +67,7 @@ function imageData(source) {
 
 export async function createApp({ db = openDatabase(), origin = process.env.APP_ORIGIN || '', production = process.env.NODE_ENV === 'production' } = {}) {
   initCkd(db);
+  initHolding(db);
   if (production && !/^https:\/\/[^/]+$/.test(origin)) throw new Error('Production cần APP_ORIGIN=https://ten-mien-cua-ban (không có dấu / cuối).');
   const dummy = await hashPassword('unused-' + crypto.randomUUID());
   const send = (res, status, data, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(data)); };
@@ -85,14 +87,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'scan-stt-20261114-26' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'holding-v2-20261114-27' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -124,6 +126,25 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const u = sessionUser(db, req.headers.cookie);
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');
       if (mutating && req.headers['x-csrf-token'] !== u.csrf) fail(403, 'Phiên thao tác không hợp lệ. Hãy tải lại trang.');
+      if(path.startsWith('/api/holding/v2/')){
+        const action=path.slice('/api/holding/v2/'.length),query=Object.fromEntries(url.searchParams);
+        if(req.method==='GET'&&action==='reference')return send(res,200,holdingReference(db));
+        if(req.method==='GET'&&action==='lookup')return send(res,200,holdingLookup(db,query.barcode));
+        if(req.method==='GET'&&action==='preferences')return send(res,200,holdingPreferences(db,u.id));
+        if(req.method==='POST'&&action==='preferences'){writeAccess(u);return send(res,200,holdingPreferences(db,u.id,await jsonBody(req)));}
+        if(req.method==='GET'&&action==='inventory')return send(res,200,holdingInventory(db,query));
+        if(req.method==='GET'&&action==='events'){const events=holdingEvents(db,query);return send(res,200,{events,next:events.length===100?events.at(-1).id:null});}
+        if(req.method==='POST'&&action==='receive'){writeAccess(u);const b=await jsonBody(req);return send(res,201,receiveHolding(db,b,u.id,imageData(b.image)));}
+        if(req.method==='POST'&&action==='withdraw'){writeAccess(u);return send(res,200,withdrawHolding(db,await jsonBody(req),u.id));}
+        if(req.method==='POST'&&action==='import'){
+          adminAccess(u);let name;try{name=decodeURIComponent(req.headers['x-mm-file-name']||'');}catch{fail(400,'Tên file không hợp lệ.');}name=text(name,'Tên file',200);if(!/\.(xls|xlsx)$/i.test(name))fail(400,'Chọn file .xls hoặc .xlsx.');
+          const bytes=await workbookBody(req,'Holding');let parsed;try{parsed=await parseMMInWorker(bytes);}catch(e){fail(400,e.message);}return send(res,200,importHolding(db,parsed,name,query.kind,u.id));
+        }
+        const image=/^entries\/(\d+)\/image$/.exec(action);
+        if(req.method==='GET'&&image){const r=db.prepare('SELECT image_type,image FROM holding_entries WHERE id=?').get(Number(image[1]));if(!r?.image)fail(404,'Chưa có ảnh.');res.writeHead(200,{'Content-Type':r.image_type,'Cache-Control':'no-store'});return res.end(r.image);}
+        if(req.method==='GET'&&action==='export'){const bytes=holdingReport(db,query,u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-holding.xlsx"'});return res.end(bytes);}
+        fail(404,'Không tìm thấy chức năng Holding.');
+      }
       if (req.method === 'GET' && path === '/api/preferences') {
         const row=db.prepare('SELECT navigation,continuous_scan,updated_at FROM user_preferences WHERE user_id=?').get(u.id);
         return send(res,200,{navigation:row ? JSON.parse(row.navigation) : ['home','scan','assistant','account'],continuous_scan:row ? Boolean(row.continuous_scan) : true,updated_at:row?.updated_at || null});
@@ -166,7 +187,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         scans: db.prepare('SELECT COUNT(*) n FROM scans').get().n,
         materials: db.prepare('SELECT COUNT(*) n FROM (SELECT item_code FROM materials UNION SELECT item_code FROM mm_inventory)').get().n,
         boxes: db.prepare('SELECT COUNT(*) n FROM boxes').get().n,
-        holding: db.prepare('SELECT COALESCE(SUM(qty),0) n FROM movements').get().n
+        holding: db.prepare('SELECT COALESCE(SUM(remaining_qty),0) n FROM holding_entries').get().n
       });
       if (req.method === 'GET' && path === '/api/ckd/workbooks') return send(res,200,{workbooks:db.prepare('SELECT w.*,(SELECT COUNT(*) FROM ckd_models WHERE workbook_id=w.id) models,(SELECT COUNT(*) FROM ckd_orders WHERE workbook_id=w.id) orders FROM ckd_workbooks w ORDER BY w.id DESC').all()});
       if (req.method === 'POST' && path === '/api/ckd/import') {
@@ -332,6 +353,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         adminAccess(u); const r = db.prepare('DELETE FROM scans WHERE id=?').run(Number(path.split('/')[3]));
         if (!r.changes) fail(404, 'Lượt quét không tồn tại.'); return send(res, 200, { ok: true });
       }
+      if (req.method === 'GET' && path === '/api/export' && url.searchParams.get('kind')==='holding') {const bytes=holdingReport(db,{},u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename=work-area-holding.xlsx'});return res.end(bytes);}
       if (req.method === 'GET' && path === '/api/export') {
         const kind = url.searchParams.get('kind') || 'scans'; let rows;
         if (kind === 'scans') {
@@ -378,23 +400,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         balances: db.prepare('SELECT v.item_code,m.item,v.location,SUM(v.qty) qty FROM movements v JOIN materials m ON m.item_code=v.item_code GROUP BY v.item_code,v.location HAVING SUM(v.qty)<>0 ORDER BY v.item_code,v.location').all(),
         movements: db.prepare('SELECT v.*,u.name FROM movements v JOIN users u ON u.id=v.user_id ORDER BY v.id DESC LIMIT 100').all()
       });
-      if (req.method === 'POST' && path === '/api/holding') {
-        writeAccess(u); const b = await jsonBody(req), id = requestId(b.request_id);
-        const item = norm(text(b.item_code, 'ITEM')), location = norm(text(b.location, 'Location')), amount = positive(b.qty, 'Số lượng');
-        if (!['in','out'].includes(b.direction)) fail(400, 'Cần chọn Nhập hoặc Xuất.');
-        const note = typeof b.note === 'string' ? b.note.slice(0, 500) : '';
-        const result = transaction(db, () => {
-          const previous = db.prepare('SELECT id,user_id FROM movements WHERE request_id=?').get(id);
-          if (previous) { if (previous.user_id !== u.id) fail(409, 'Mã yêu cầu đã tồn tại.'); return { id: previous.id, duplicate: true }; }
-          if (!db.prepare('SELECT item_code FROM materials WHERE item_code=?').get(item)) fail(400, 'ITEM chưa có trong MM.');
-          const current = db.prepare('SELECT COALESCE(SUM(qty),0) qty FROM movements WHERE item_code=? AND location=?').get(item, location).qty;
-          const qty = b.direction === 'out' ? -amount : amount;
-          if (current + qty < 0) fail(409, 'Số lượng xuất lớn hơn tồn kho tại Location này.');
-          const saved = db.prepare('INSERT INTO movements(request_id,item_code,location,qty,note,user_id) VALUES (?,?,?,?,?,?)').run(id, item, location, qty, note, u.id);
-          return { id: Number(saved.lastInsertRowid), balance: current + qty };
-        });
-        return send(res, result.duplicate ? 200 : 201, result);
-      }
+      if(req.method==='POST'&&path==='/api/holding')fail(410,'Holding has been upgraded. Reload the page to use the new Holding room.');
       fail(404, 'Không tìm thấy chức năng.');
     } catch (e) {
       const constraint = e.code?.includes('CONSTRAINT') || (e.errcode && (e.errcode & 255) === 19);

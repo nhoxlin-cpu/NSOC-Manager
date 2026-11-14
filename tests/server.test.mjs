@@ -128,13 +128,18 @@ test('simultaneous confirmations recheck totals and keep different deliveries in
 });
 
 test('Holding transactions prevent negative stock under concurrent requests and preserve locations', async () => {
-  const payload = { request_id:randomUUID(),item_code:'ITEM-1',location:'A-01',direction:'in',qty:100,note:'Nhập kiểm tra' };
-  assert.equal((await request('/api/holding',inspector,'POST',payload)).status,201);
-  assert.equal((await request('/api/holding',inspector,'POST',payload)).data.duplicate,true);
-  const withdrawals = await Promise.all([1,2].map(() => request('/api/holding',inspector,'POST',{ ...payload,request_id:randomUUID(),direction:'out',qty:80 })));
-  assert.deepEqual(withdrawals.map(r => r.status).sort(),[201,409]);
-  const r = await request('/api/holding',viewer); assert.equal(r.data.balances[0].qty,20);
-  assert.equal((await request('/api/holding',inspector,'POST',{ ...payload,request_id:randomUUID(),direction:'out',location:'A-02',qty:1 })).status,409);
+  const payload={request_id:randomUUID(),barcode:'P-HOLD-TEST',item_code:'ITEM-1',location:'A-01',qty:100,vendor:'Vendor',lot_no:'001'};
+  assert.equal((await request('/api/holding',inspector,'POST',payload)).status,410);
+  const received=await request('/api/holding/v2/receive',inspector,'POST',payload);assert.equal(received.status,201);
+  assert.equal((await request('/api/holding/v2/receive',inspector,'POST',payload)).data.duplicate,true);
+  const withdrawals=await Promise.all([1,2].map(()=>request('/api/holding/v2/withdraw',inspector,'POST',{request_id:randomUUID(),entry_id:received.data.id,qty:80,reason:'Test issue'})));
+  assert.deepEqual(withdrawals.map(r=>r.status).sort(),[200,409]);
+  const r=await request('/api/holding/v2/inventory',viewer);assert.equal(r.data.entries[0].remaining_qty,20);assert.equal(r.data.entries[0].location,'A-01');
+  assert.equal((await request('/api/holding/v2/receive',inspector,'POST',{...payload,request_id:randomUUID()})).status,409);
+  assert.equal((await request('/api/holding/v2/receive',viewer,'POST',{...payload,request_id:randomUUID(),barcode:'OTHER'})).status,403);
+  assert.equal((await request('/api/holding/v2/withdraw',inspector,'POST',{request_id:randomUUID(),entry_id:received.data.id,qty:1,reason:''})).status,400);
+  assert.equal((await request('/api/holding/v2/receive',inspector,'POST',payload,{'X-CSRF-Token':'wrong'})).status,403);
+  assert.equal((await request('/api/holding/v2/inventory')).status,401);
 });
 
 test('shortcut preferences are authenticated, validated, private per account and editable by viewers', async () => {

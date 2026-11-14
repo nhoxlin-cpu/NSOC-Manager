@@ -1,6 +1,7 @@
+import {renderHolding} from '/holding.js?v=20261114-27';
 import { renderCutting } from '/cutting.js?v=20261114-23';
 import { renderCkd } from '/ckd.js?v=20261113-17';
-import { PhoneScanner, zxing } from '/scanner.js?v=20261114-24';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261114-27';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -408,19 +409,10 @@ async function ckd() {
   await renderCkd({api,PhoneScanner,state,escape,number,field,button,icon,pageTop,toast,detail,canWrite,scanFlowBar,setContinuousScan,stopCamera,updateCaptureUI,showScanCode});
 }
 
-async function holding(id) {
-  if (!state.user) { $('#main').innerHTML = needsLogin('Holding room'); return; }
-  $('#main').innerHTML = `${pageTop('Holding room', 'Nhập · Xuất · Theo dõi tồn kho', '<a class="button small" href="/api/export?kind=holding">' + icon('download') + ' Xuất Excel</a>')}<div class="columns"><section class="panel">${readOnlyNote()}<h2>Ghi nhận giao dịch</h2><form id="holding-form"><div class="field"><label for="direction">Loại giao dịch</label><select name="direction" id="direction"><option value="in">Nhập vào Holding</option><option value="out">Xuất khỏi Holding</option></select></div>${field('ITEM code','item_code',{placeholder:'Mã ITEM đã có trong MM',extra:'maxlength="200"'})}<div class="field-row">${field('Location','location',{placeholder:'VD: A-01',extra:'maxlength="200"'})}${field('Số lượng','qty',{type:'number',extra:'min="1" max="1000000000" step="1" inputmode="numeric"'})}</div>${field('Ghi chú','note',{required:false,placeholder:'Phiếu nhập, lý do hoặc người nhận',extra:'maxlength="500"'})}<p class="form-message" role="alert"></p><button class="button primary full" type="submit" ${canWrite() ? '' : 'disabled'}>${icon('box')} Lưu giao dịch</button></form></section><section class="panel"><div class="table-tools"><h2>Tồn kho hiện tại</h2>${button('Tải lại','reload-holding','small','sync')}</div><div id="holding-balances"></div></section></div><section class="panel"><h2>Giao dịch gần đây</h2><div id="holding-history"></div></section>`;
-  const load = async () => {
-    const r = await api('/holding'); if (id !== renderId) return;
-    $('#holding-balances').innerHTML = r.balances.length ? `<div class="table-wrap"><table><thead><tr><th>ITEM / Vật tư</th><th>Location</th><th>Tồn</th></tr></thead><tbody>${r.balances.map(b => `<tr><td>${escape(b.item_code)}<small>${escape(b.item)}</small></td><td>${escape(b.location)}</td><td>${number(b.qty)}</td></tr>`).join('')}</tbody></table></div>` : empty('Holding đang trống','Giao dịch nhập sẽ cập nhật tồn kho tại đây.','box');
-    $('#holding-history').innerHTML = r.movements.length ? `<div class="table-wrap"><table><thead><tr><th>Thời gian</th><th>ITEM / Location</th><th>Thay đổi</th><th>Người thao tác</th><th>Ghi chú</th></tr></thead><tbody>${r.movements.map(m => `<tr><td>${time(m.created_at)}</td><td>${escape(m.item_code)}<small>${escape(m.location)}</small></td><td class="${m.qty > 0 ? 'qty-positive' : 'qty-negative'}">${m.qty > 0 ? '+' : ''}${number(m.qty)}</td><td>${escape(m.name)}</td><td class="wrap">${escape(m.note)}</td></tr>`).join('')}</tbody></table></div>` : empty('Chưa có giao dịch','Hiển thị tối đa 100 giao dịch gần đây.');
-  };
-  scanFlowBar($('#holding-form').closest('.panel'));fieldCamera('item_code','Holding · ITEM code',fillItemCode);fieldCamera('location','Holding · Location');scanFieldEnter(['item_code','location']);
-  let retry = null;
-  formAction('#holding-form', async (b, f) => { const fingerprint = JSON.stringify(b); if (!retry || retry.fingerprint !== fingerprint) retry = { fingerprint, request_id:crypto.randomUUID() }; const result = await api('/holding', { method:'POST', data:{ ...b, request_id:retry.request_id } }); retry = null; f.reset(); toast(`Đã lưu giao dịch. Tồn tại Location: ${number(result.balance ?? 0)}.`); await load(); });
-  $('#reload-holding').onclick = () => load().catch(e => toast(e.message));
-  try { await load(); } catch(e) { if (id === renderId) $('#holding-balances').innerHTML = empty('Chưa tải được tồn kho',escape(e.message),'sync'); }
+async function holding(){
+ if(!state.user){$('#main').innerHTML=needsLogin('Holding room');return;}
+ await renderHolding({api,state,escape,number,time,button,pageTop,detail,toast,icon,canWrite,updateCaptureUI,setContinuousScan,
+ openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}});
 }
 
 function assistant() {
@@ -429,7 +421,7 @@ function assistant() {
     ['sync','Khi mất kết nối','Lượt quét có thể được giữ trong bộ nhớ trình duyệt sau khi bạn đã đăng nhập. Không xóa dữ liệu trình duyệt trước khi đồng bộ. Đăng nhập lại đúng tài khoản, vào Quét mã → Đồng bộ để gửi các lượt đang chờ lên server.'],
     ['ckd','Kiểm tra CKD','Nhập phiếu/lô, ITEM, hai nhãn, Maker, số lượng box và mã box riêng. Nhấn đối chiếu để xem kết quả. Chỉ khi bạn nhấn Xác nhận box, dữ liệu mới được lưu. Hệ thống chặn nhãn sai, box trùng và số lượng vượt.'],
     ['search','Nhập danh mục MM','Quản trị viên mở Cài đặt → Dữ liệu MM, tải CSV mẫu. Điền dữ liệu thật và lưu CSV UTF-8 từ Excel. Mỗi mã ITEM và Samsung phải duy nhất; Selling Q’ty và MOQ là số nguyên dương.'],
-    ['box','Holding room','Chọn Nhập hoặc Xuất, điền ITEM và Location. Server cộng/trừ tồn kho dùng chung và chặn xuất âm. Có thể xuất toàn bộ nhật ký giao dịch ra Excel.'],
+    ['box','Holding room','Nhập Holding: quét Barcode-no, tra file PBA32 / PMD32 hoặc nhập tay, nhớ Location theo tài khoản. Tủ Holding: xem từng box hoặc tổng theo ITEM; xuất một phần hoặc toàn bộ có lý do. Báo cáo Excel gồm tổng quan, ITEM, barcode và nhật ký.'],
     ['shield','Tài khoản & quyền','Hai biểu tượng Tài khoản đều mở cùng trang đăng nhập hoặc hồ sơ. Quản trị viên cấp tài khoản; nhân viên được ghi nhận dữ liệu; tài khoản chỉ xem được tra cứu và xuất báo cáo.']
   ].map(([symbol,title,description]) => `<article class="help-card"><h3>${icon(symbol)}${title}</h3><p>${description}</p></article>`).join('')}</div><p class="muted mt">Đây là hướng dẫn sử dụng, chưa có chatbot AI được kết nối.</p>`;
 }
