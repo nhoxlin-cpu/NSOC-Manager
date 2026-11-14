@@ -92,7 +92,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'stock-history-20261114-25' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'scan-stt-20261114-26' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -336,7 +336,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const kind = url.searchParams.get('kind') || 'scans'; let rows;
         if (kind === 'scans') {
           const mode=scanMode(),data=db.prepare(`${scanSelect} WHERE (? IS NULL OR s.mode=?) ORDER BY s.id DESC`).all(mode,mode);
-          rows=mode==='HS'?[['STT / ID','ITEM','Barcode','Kết quả','Người quét','Thời gian UTC'],...data.map(r=>[r.id,r.item_code||r.barcode,r.barcode,r.prior_count>0?'Trùng':'Không trùng',r.scanner,r.created_at])]:[['STT / ID','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM code','Item NM','Số lượng (QTY)','Maker','Vendor','Lot No'],...data.map(r=>[r.id,r.barcode,r.mode,r.scanner,r.created_at,r.item_code||'Chưa có trong MM',r.item_name||'',r.quantity??'',r.maker||'',r.vendor||'',r.lot_no||''])];
+          rows=mode==='HS'?[['STT','ITEM','Barcode','Kết quả','Người quét','Thời gian UTC'],...data.map((r,i)=>[i+1,r.item_code||r.barcode,r.barcode,r.prior_count>0?'Trùng':'Không trùng',r.scanner,r.created_at])]:[['STT','Barcode','Loại quét','Người quét','Thời gian UTC','ITEM code','Item NM','Số lượng (QTY)','Maker','Vendor','Lot No'],...data.map((r,i)=>[i+1,r.barcode,r.mode,r.scanner,r.created_at,r.item_code||'Chưa có trong MM',r.item_name||'',r.quantity??'',r.maker||'',r.vendor||'',r.lot_no||''])];
         }
         else if (kind === 'boxes') rows = [['Phiếu/lô','Box','ITEM','Số lượng','Mục tiêu khi xác nhận','Người xác nhận','Thời gian UTC'], ...db.prepare('SELECT b.*,u.name FROM boxes b JOIN users u ON u.id=b.user_id ORDER BY b.id DESC').all().map(r => [r.delivery,r.box_ref,r.item_code,r.qty,r.target_qty,r.name,r.created_at])];
         else if (kind === 'holding') rows = [['ITEM','Location','Số lượng thay đổi','Ghi chú','Người thao tác','Thời gian UTC'], ...db.prepare('SELECT m.*,u.name FROM movements m JOIN users u ON u.id=m.user_id ORDER BY m.id DESC').all().map(r => [r.item_code,r.location,r.qty,r.note,r.name,r.created_at])];

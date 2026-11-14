@@ -246,7 +246,7 @@ test('HS saves duplicate occurrences with stable results, simultaneous devices a
   const original=results.find(r=>r.data.prior_count===0);assert.equal((await request('/api/scans/'+original.data.id,admin,'DELETE')).status,200);
   const remaining=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='HS-SAVE-ONE');assert.ok(remaining.every(r=>r.prior_count>0));
   const file=await fetch(base+'/api/export?kind=scans&mode=HS',{headers:{Cookie:viewer.cookie}});const bytes=Buffer.from(await file.arrayBuffer());assert.ok(bytes.toString().includes('HS-SAVE-ONE'));
-  const report=XLSX.read(bytes,{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets[report.SheetNames[0]],{header:1}),head=rows.find(r=>r.includes('STT / ID'));
+  const report=XLSX.read(bytes,{type:'buffer'}),rows=XLSX.utils.sheet_to_json(report.Sheets[report.SheetNames[0]],{header:1}),head=rows.find(r=>r.includes('STT'));
   assert.ok(head.indexOf('ITEM')<head.indexOf('Barcode'));assert.ok(head.indexOf('Barcode')<head.indexOf('Người quét'));
 });
 
