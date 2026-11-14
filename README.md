@@ -174,3 +174,5 @@ Mở **Cắt chân** để quét mã và tra đúng cặp **AI 1st ↔ MI 1st**,
 Quản trị viên nhập Excel gốc `.xls` / `.xlsx` tối đa 32 MB tại **Nhập bảng quy đổi AI / MI**, hoặc tải file mẫu tại đây. Đọc tất cả sheet, hỗ trợ tiêu đề nhóm MI CODE / AI CODE, ô model gộp và phần chữ ký VN MANAGER. Sheet không nhận diện hoặc cặp thiếu một mã làm toàn bộ lần nhập thất bại. Giữ mã dạng Text để bảo toàn số 0 đầu. Không tạo dữ liệu quy đổi từ ảnh chụp.
 
 Lịch sử quy đổi tách riêng, lưu kết quả tại thời điểm quét, người quét và ảnh khi bật nút camera. Nhập bảng mới không đổi lịch sử cũ. Admin / inspector lưu lượt; viewer chỉ tra cứu. Cần kết nối server; lỗi mạng hiện thông báo để thử lại, cùng yêu cầu không lưu trùng. BOM QTY là thông tin tham khảo, không phải số lượng đã cắt.
+
+Scanner frame: use the minus/plus buttons or pinch inside the green frame to resize it. Pinch outside the frame to zoom the camera. Tap to request focus; when point focus is unavailable, autofocus is retried by reopening the same camera. The Refocus button preserves the frame, zoom and scan session. Actual focus depends on the camera and browser.

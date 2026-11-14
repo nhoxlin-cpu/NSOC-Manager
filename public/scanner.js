@@ -45,7 +45,7 @@ export class PhoneScanner {
         <p class="scanner-count" id="scanner-count">Đã lưu 0 lượt trong lần mở camera này</p>
         <div class="scanner-result-actions"><button class="scanner-repeat" id="scanner-repeat" disabled>Quét lại cùng mã</button><button class="scanner-next" id="scanner-next" hidden>Quét mã tiếp theo</button></div>
         <div class="scanner-alerts" id="scanner-alerts" aria-live="polite"></div>
-      </section><div class="scanner-body"><div class="scanner-frame" id="scanner-frame" tabindex="0" role="group" aria-label="Vùng quét: kéo để di chuyển, kéo góc để đổi kích thước. Phím mũi tên để di chuyển, cộng trừ để đổi cỡ.">${['tl','tr','bl','br'].map(corner=>`<button type="button" class="scanner-corner ${corner}" data-resize="${corner}" aria-label="Kéo góc ${corner} để thay đổi kích thước vùng quét"></button>`).join('')}<div class="scanner-laser"></div><span class="scanner-frame-label" id="scanner-frame-label">Đặt barcode vào trong khung</span></div></div>
+      </section><div class="scanner-body"><div class="scanner-frame" id="scanner-frame" tabindex="0" role="group" aria-label="Vùng quét: kéo để di chuyển, chụm hai ngón hoặc dùng cộng trừ để đổi kích thước.">${['tl','tr','bl','br'].map(corner=>`<button type="button" class="scanner-corner ${corner}" data-resize="${corner}" aria-label="Kéo góc ${corner} để thay đổi kích thước vùng quét"></button>`).join('')}<div class="scanner-laser"></div><div class="scanner-frame-size"><button type="button" id="scanner-frame-smaller" data-frame-size aria-label="Thu nhỏ khung quét">−</button><button type="button" id="scanner-frame-larger" data-frame-size aria-label="Phóng to khung quét">+</button></div><span class="scanner-frame-label" id="scanner-frame-label">Đặt barcode vào trong khung</span></div></div>
       <section class="scanner-controls" aria-label="Điều khiển camera"><div class="scanner-formats" role="tablist" aria-label="Định dạng mã"><button id="scanner-barcode" role="tab">${svg('barcode')} Barcode</button><button id="scanner-qr" role="tab">${svg('qr')} QR</button></div>
         <div class="scanner-tools"><label class="scanner-zoom-label"><span class="sr-only">Mức phóng đại camera</span><select id="scanner-zoom" aria-label="Mức phóng đại camera" disabled><option value="1">×1</option></select></label><div class="scanner-round-tools"><button class="scanner-round" id="scanner-vibration" aria-label="Rung khi đọc mã">${svg('vibration')}</button><button class="scanner-round" id="scanner-sound" aria-label="Âm thanh khi đọc mã">${svg('sound')}</button></div></div><div class="scanner-assist"><button id="scanner-glare" aria-pressed="false">${svg('glare')} Nhãn bóng / chói</button><button id="scanner-reset-view">Đặt lại khung</button></div><p class="scanner-assist-note" id="scanner-assist-note" hidden></p>
       </section><div class="scanner-bottom"><button class="scanner-back" id="scanner-back" aria-label="Đóng camera">${svg('back')}</button><button class="scanner-manual" id="scanner-manual">Nhập mã bằng tay</button><button class="scanner-flash" id="scanner-flash" aria-label="Bật đèn flash" aria-pressed="false" disabled>${svg('flash')}</button></div></div>`;
@@ -63,6 +63,10 @@ export class PhoneScanner {
     this.$('#scanner-flash').onclick=() => this.flash();
     this.$('#scanner-zoom').onchange=e => this.zoom(Number(e.target.value));
     this.$('#scanner-glare').onclick=()=>this.setGlare(!this.glare);this.$('#scanner-reset-view').onclick=()=>this.resetView();
+    this.$('#scanner-reset-view').insertAdjacentHTML('beforebegin','<button type="button" id="scanner-refocus" aria-label="Khởi động lại camera để lấy nét">Nét lại</button>');
+    this.$('.scanner-controls').insertAdjacentHTML('beforeend','<p id="scanner-focus-note" class="scanner-assist-note" hidden></p>');
+    this.$('#scanner-refocus').onclick=()=>{const f=this.$('#scanner-frame').getBoundingClientRect();this.focusAt(f.left+f.width/2,f.top+f.height/2,true);};
+    this.$('#scanner-frame-smaller').onclick=()=>this.scaleFrame(.82);this.$('#scanner-frame-larger').onclick=()=>this.scaleFrame(1.22);
     this.installGestures();
     this.onClose=() => {if(!dialog.open)this.release();}; dialog.addEventListener('close',this.onClose);
     this.settings(); this.formatUI();this.flowUI();
@@ -99,7 +103,7 @@ export class PhoneScanner {
   formatUI() {
     this.dialog.dataset.format=this.format;
     for (const format of ['barcode','qr']) { const b=this.$('#scanner-' + format); b.classList.toggle('active',this.format === format); b.setAttribute('aria-selected',String(this.format === format)); }
-    this.$('#scanner-frame-label').textContent=(this.format === 'qr' ? 'QR' : 'Barcode')+' · Chạm lấy nét · Kéo khung · Chụm để zoom';
+    this.$('#scanner-frame-label').textContent=(this.format === 'qr' ? 'QR' : 'Barcode')+' · Chạm lấy nét · Chụm trong khung để đổi cỡ';
   }
   async changeFormat(format) {
     if (this.format === format || this.changing) return;
@@ -121,11 +125,11 @@ export class PhoneScanner {
   }
   async startVideo(deviceId) {
     this.releaseStream(); const epoch=this.epoch;
-    const stream=await navigator.mediaDevices.getUserMedia({ video:{ ...(deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}}),width:{ideal:1920},height:{ideal:1080} },audio:false });
+    const stream=await navigator.mediaDevices.getUserMedia({ video:{ ...(deviceId ? {deviceId:{exact:deviceId}} : {facingMode:{ideal:'environment'}}),width:{ideal:1920},height:{ideal:1080},focusMode:{ideal:'continuous'} },audio:false });
     if (!this.active || epoch !== this.epoch) { stream.getTracks().forEach(t=>t.stop()); return; }
     this.stream=stream; this.video.srcObject=stream; await this.video.play();
     if (!this.active || epoch !== this.epoch) { this.releaseStream(); return; }
-    this.track=stream.getVideoTracks()[0]; this.torch=false;
+    this.track=stream.getVideoTracks()[0];this.cameraDeviceId=this.track.getSettings?.().deviceId||this.cameraDeviceId; this.torch=false;
     let caps={}; try { caps=this.track.getCapabilities?.() || {}; } catch {}
     this.caps=caps;this.opticalZoom=Number(this.track.getSettings?.().zoom)||1;this.digitalZoom=1;this.videoPan={x:0,y:0};this.applyVideoTransform();
     this.originalExposure=this.track.getSettings?.().exposureCompensation;
@@ -278,7 +282,7 @@ export class PhoneScanner {
     const bounds=this.roiBounds();if(bounds.width<=1||bounds.height<=1)return;
     if(!this.roi&&!reset)try{const saved=JSON.parse(pref('roi-'+(this.options.accountKey||'default')+'-'+this.format,'null'));if(saved&&['x','y','w','h'].every(k=>Number.isFinite(saved[k])&&saved[k]>=0&&saved[k]<=1))this.roi=saved;}catch{}
     let rect;
-    if(!this.roi||reset){const side=Math.min(bounds.width*.67,bounds.height*.8,290),w=this.format==='qr'?side:bounds.width*.94,h=this.format==='qr'?side:Math.min(w/2.8,bounds.height*.8,160);rect={x:(bounds.width-w)/2,y:(bounds.height-h)/2,w,h};}
+    if(!this.roi||reset){const side=Math.min(bounds.width*.67,bounds.height*.8,290),w=this.format==='qr'?side:bounds.width*.86,h=this.format==='qr'?side:Math.min(w/2.8,bounds.height*.8,160);rect={x:(bounds.width-w)/2,y:(bounds.height-h)/2,w,h};}
     else rect={x:this.roi.x*bounds.width,y:this.roi.y*bounds.height,w:this.roi.w*bounds.width,h:this.roi.h*bounds.height};
     this.setRoi(rect,bounds);
   }
@@ -288,41 +292,63 @@ export class PhoneScanner {
     this.roi={x:fit.x/bounds.width,y:fit.y/bounds.height,w:fit.w/bounds.width,h:fit.h/bounds.height};
   }
   saveRoi() {if(this.roi)remember('roi-'+(this.options.accountKey||'default')+'-'+this.format,JSON.stringify(this.roi));}
+  scaleFrame(factor){const f=this.$('#scanner-frame').getBoundingClientRect(),b=this.roiBounds(),w=f.width*factor,h=f.height*factor;this.setRoi({x:f.left-b.left+(f.width-w)/2,y:f.top-b.top+(f.height-h)/2,w,h},b);this.saveRoi();}
   resetView() {this.roi=null;this.videoPan={x:0,y:0};this.layoutRoi(true);this.saveRoi();this.zoom(Math.max(1,this.zoomMin||1));}
   installGestures() {
     const body=this.$('.scanner-body'),frame=this.$('#scanner-frame');
     const rect=()=>{const r=frame.getBoundingClientRect(),b=this.roiBounds();return{x:r.left-b.left,y:r.top-b.top,w:r.width,h:r.height};};
-    body.onpointerdown=e=>{if(!this.active)return;e.preventDefault();this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});try{body.setPointerCapture(e.pointerId);}catch{}
+    body.onpointerdown=e=>{if(!this.active||e.target.closest('[data-frame-size]'))return;e.preventDefault();this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY,inFrame:Boolean(e.target.closest('#scanner-frame'))});try{body.setPointerCapture(e.pointerId);}catch{}
       const points=[...this.pointers.values()];
-      if(points.length===2){this.gesture={type:'pinch',distance:Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y),zoom:this.opticalZoom*this.digitalZoom,mid:{x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2},pan:{...this.videoPan}};}
+      if(points.length===2){this.gesture={type:points.every(p=>p.inFrame)?'frame-pinch':'pinch',distance:Math.hypot(points[1].x-points[0].x,points[1].y-points[0].y),rect:rect(),zoom:this.opticalZoom*this.digitalZoom,mid:{x:(points[0].x+points[1].x)/2,y:(points[0].y+points[1].y)/2},pan:{...this.videoPan}};}
       else if(points.length===1)this.gesture={type:e.target.closest('[data-resize]')?'resize':e.target.closest('#scanner-frame')?'move':this.digitalZoom>1?'pan':'move',corner:e.target.closest('[data-resize]')?.dataset.resize,start:{x:e.clientX,y:e.clientY},rect:rect(),pan:{...this.videoPan}};
     };
-    body.onpointermove=e=>{if(!this.pointers.has(e.pointerId)||!this.gesture)return;e.preventDefault();this.pointers.set(e.pointerId,{x:e.clientX,y:e.clientY});const g=this.gesture,b=this.roiBounds();
-      if(g.type!=='pinch'&&!g.moved){if(Math.hypot(e.clientX-g.start.x,e.clientY-g.start.y)<8)return;g.moved=true;}
-      if(g.type==='pinch'){const p=[...this.pointers.values()];if(p.length<2)return;this.zoom(g.zoom*Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)/Math.max(1,g.distance));this.videoPan={x:g.pan.x+(p[0].x+p[1].x)/2-g.mid.x,y:g.pan.y+(p[0].y+p[1].y)/2-g.mid.y};this.applyVideoTransform();}
+    body.onpointermove=e=>{if(!this.pointers.has(e.pointerId)||!this.gesture)return;e.preventDefault();this.pointers.set(e.pointerId,{...this.pointers.get(e.pointerId),x:e.clientX,y:e.clientY});const g=this.gesture,b=this.roiBounds();
+      if(!['pinch','frame-pinch'].includes(g.type)&&!g.moved){if(Math.hypot(e.clientX-g.start.x,e.clientY-g.start.y)<8)return;g.moved=true;}
+      if(g.type==='frame-pinch'){const p=[...this.pointers.values()];if(p.length<2)return;const factor=Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)/Math.max(1,g.distance),w=g.rect.w*factor,h=g.rect.h*factor;this.setRoi({x:g.rect.x+(g.rect.w-w)/2+(p[0].x+p[1].x)/2-g.mid.x,y:g.rect.y+(g.rect.h-h)/2+(p[0].y+p[1].y)/2-g.mid.y,w,h},b);}
+      else if(g.type==='pinch'){const p=[...this.pointers.values()];if(p.length<2)return;this.zoom(g.zoom*Math.hypot(p[1].x-p[0].x,p[1].y-p[0].y)/Math.max(1,g.distance));this.videoPan={x:g.pan.x+(p[0].x+p[1].x)/2-g.mid.x,y:g.pan.y+(p[0].y+p[1].y)/2-g.mid.y};this.applyVideoTransform();}
       else {const dx=e.clientX-g.start.x,dy=e.clientY-g.start.y;if(g.type==='resize')this.setRoi(resizeScanRect(g.rect,g.corner,dx,dy,b.width,b.height,this.format==='qr'),b);else if(g.type==='pan'){this.videoPan={x:g.pan.x+dx,y:g.pan.y+dy};this.applyVideoTransform();}else this.setRoi({...g.rect,x:g.rect.x+dx,y:g.rect.y+dy},b);}
     };
-    const finish=e=>{const g=this.gesture,tap=e.type==='pointerup'&&this.pointers.size===1&&g&&g.type!=='pinch'&&g.type!=='resize'&&!g.moved;this.pointers.delete(e.pointerId);this.gesture=null;this.hits=0;this.saveRoi();if(tap)this.focusAt(e.clientX,e.clientY);};body.onpointerup=finish;body.onpointercancel=finish;
+    const finish=e=>{const g=this.gesture,tap=e.type==='pointerup'&&this.pointers.size===1&&g&&!['pinch','frame-pinch','resize'].includes(g.type)&&!g.moved;this.pointers.delete(e.pointerId);this.gesture=null;this.hits=0;this.saveRoi();if(tap)this.focusAt(e.clientX,e.clientY);};body.onpointerup=finish;body.onpointercancel=finish;
     frame.onkeydown=e=>{const r=rect(),step=e.shiftKey?20:8;if(['ArrowLeft','ArrowRight','ArrowUp','ArrowDown'].includes(e.key)){e.preventDefault();this.setRoi({...r,x:r.x+(e.key==='ArrowLeft'?-step:e.key==='ArrowRight'?step:0),y:r.y+(e.key==='ArrowUp'?-step:e.key==='ArrowDown'?step:0)});this.saveRoi();}else if(['+','=','-'].includes(e.key)){e.preventDefault();const factor=e.key==='-'?.9:1.1;this.setRoi({...r,w:r.w*factor,h:r.h*factor});this.saveRoi();}};
     this.resizeObserver=new ResizeObserver(()=>{if(this.active){this.layoutRoi();this.applyVideoTransform();}});this.resizeObserver.observe(body);
   }
-  async focusAt(clientX,clientY){
-    if(!this.active||!this.track||this.focusBusy)return;
+  async restartForFocus(){
+    if(Date.now()-(this.lastFocusRestart||0)<2500)return 'waiting';
+    this.lastFocusRestart=Date.now();const epoch=this.epoch,device=this.track?.getSettings?.().deviceId||this.cameraDeviceId,zoom=this.opticalZoom*this.digitalZoom,torch=this.torch,pan={...this.videoPan};
+    await this.startVideo(device);
+    if(!this.active||epoch!==this.epoch)return 'cancelled';
+    await this.zoom(zoom);this.videoPan=pan;this.applyVideoTransform();if(torch&&!this.glare&&this.caps.torch&&!this.torch)await this.flash();
+    return 'restarted';
+  }
+  async focusAt(clientX,clientY,forceRestart=false){
+    if(!this.active||this.focusBusy||(!this.track&&!forceRestart))return;
     clearTimeout(this.focusRestore);clearTimeout(this.focusHide);
     let ring=this.$('.scanner-focus');if(!ring){ring=document.createElement('div');ring.className='scanner-focus';ring.setAttribute('role','status');ring.innerHTML='<span></span>';this.dialog.append(ring);}
-    ring.hidden=false;ring.style.left=clientX+'px';ring.style.top=clientY+'px';ring.dataset.state='working';ring.querySelector('span').textContent='Lấy nét';
-    const track=this.track,epoch=this.epoch,modes=this.caps.focusMode||[],mode=modes.includes('single-shot')?'single-shot':modes.includes('continuous')?'continuous':null;
+    ring.hidden=false;ring.style.left=clientX+'px';ring.style.top=clientY+'px';ring.dataset.state='working';ring.querySelector('span').textContent=forceRestart?'Mở lại camera…':'Lấy nét';
+    const track=this.track,epoch=this.epoch,modes=[...(Array.isArray(this.caps.focusMode)?this.caps.focusMode:[])],setting=track?.getSettings?.().focusMode;
+    if(['continuous','single-shot'].includes(setting)&&!modes.includes(setting))modes.push(setting);
+    const mode=modes.includes('single-shot')?'single-shot':modes.includes('continuous')?'continuous':null;
     const supported=navigator.mediaDevices?.getSupportedConstraints?.()||{},pointSupport=supported.pointsOfInterest===true||Object.hasOwn(this.caps,'pointsOfInterest');
-    const point=cameraPoint(clientX,clientY,this.video.getBoundingClientRect(),this.video.videoWidth,this.video.videoHeight),advanced={};
-    if(mode)advanced.focusMode=mode;if(pointSupport)advanced.pointsOfInterest=[point];
+    const point=cameraPoint(clientX,clientY,this.video.getBoundingClientRect(),this.video.videoWidth,this.video.videoHeight);
     this.focusBusy=true;
     try{
-      if(!mode)throw Error('unsupported');
-      await track.applyConstraints({advanced:[advanced]});if(!this.active||epoch!==this.epoch)return;
-      ring.dataset.state='applied';ring.querySelector('span').textContent=pointSupport?'Lấy nét':'Tự lấy nét';
-      if(mode==='single-shot'&&modes.includes('continuous'))this.focusRestore=setTimeout(()=>{if(this.active&&this.track===track)track.applyConstraints({advanced:[{focusMode:'continuous',...(pointSupport?{pointsOfInterest:[point]}:{})}]}).catch(()=>{});},1200);
-    }catch{if(this.active&&epoch===this.epoch){ring.dataset.state='unsupported';ring.querySelector('span').textContent='Không hỗ trợ';}}
-    finally{this.focusBusy=false;if(this.active&&epoch===this.epoch)this.focusHide=setTimeout(()=>{ring.hidden=true;},1500);}
+      let applied=false,pointApplied=false;
+      if(!forceRestart&&mode){
+        if(pointSupport)try{await track.applyConstraints({advanced:[{focusMode:mode,pointsOfInterest:[point]}]});applied=true;pointApplied=true;}catch{}
+        if(!applied)try{await track.applyConstraints({advanced:[{focusMode:modes.includes('continuous')?'continuous':mode}]});applied=true;}catch{}
+      }
+      if(!this.active||epoch!==this.epoch)return;
+      if(applied){
+        ring.dataset.state='applied';ring.querySelector('span').textContent=pointApplied?'Lấy nét':'Tự lấy nét';
+        if(mode==='single-shot'&&modes.includes('continuous'))this.focusRestore=setTimeout(()=>{if(this.active&&this.track===track)track.applyConstraints({advanced:[{focusMode:'continuous',...(pointApplied?{pointsOfInterest:[point]}:{})}]}).catch(()=>{});},1200);
+      }else{
+        ring.dataset.state='working';ring.querySelector('span').textContent='Mở lại camera…';
+        const result=await this.restartForFocus();if(!this.active||epoch!==this.epoch)return;
+        ring.dataset.state=result;ring.querySelector('span').textContent=result==='waiting'?'Chờ camera ổn định':'Đã mở lại camera';
+        const note=this.$('#scanner-focus-note');note.hidden=false;note.textContent='Nếu ảnh còn mờ, đưa máy xa nhãn hơn rồi tăng zoom.';
+      }
+    }catch{if(this.active&&epoch===this.epoch){ring.dataset.state='error';ring.querySelector('span').textContent='Thử Nét lại';const note=this.$('#scanner-focus-note');note.hidden=false;note.textContent='Chưa mở lại được camera. Bấm Nét lại để thử lại.';}}
+    finally{this.focusBusy=false;if(this.active&&epoch===this.epoch)this.focusHide=setTimeout(()=>{ring.hidden=true;},2200);}
   }
   async setGlare(on) {
     this.glare=on;const button=this.$('#scanner-glare');button.setAttribute('aria-pressed',String(on));button.classList.toggle('enabled',on);
