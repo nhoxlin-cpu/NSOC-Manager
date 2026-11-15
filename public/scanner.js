@@ -207,7 +207,7 @@ export class PhoneScanner {
     const ratio=Math.min(1,960/w); const width=Math.max(1,Math.round(w*ratio)),height=Math.max(1,Math.round(h*ratio));
     if (this.canvas.width !== width || this.canvas.height !== height) { this.canvas.width=width; this.canvas.height=height; }
     this.context.drawImage(this.video,x,y,w,h,0,0,width,height);
-    if(this.options.autoCapture && (!this.options.onCode||this.options.captureOnCode)){
+    if(this.options.autoCapture && (!this.options.onCode||this.options.captureOnCode) && (this.options.mode!=='HS'||(this.candidate&&this.candidate!==this.latched))){
       const scale=Math.min(1,1280/Math.max(this.video.videoWidth,this.video.videoHeight));
       this.evidenceCanvas.width=Math.round(this.video.videoWidth*scale);this.evidenceCanvas.height=Math.round(this.video.videoHeight*scale);
       this.evidenceCanvas.getContext('2d').drawImage(this.video,0,0,this.evidenceCanvas.width,this.evidenceCanvas.height);
@@ -243,7 +243,7 @@ export class PhoneScanner {
         }
       } else if(Date.now()-(this.candidateTime||0)>1800) { this.candidate=''; this.hits=0; }
     }
-    if (this.active && epoch === this.epoch) this.timer=setTimeout(()=>this.loop(epoch),this.reader ? 300 : 180);
+    if (this.active && epoch === this.epoch) this.timer=setTimeout(()=>this.loop(epoch),this.options.mode==='HS'?(this.reader?120:80):(this.reader?300:180));
   }
   async accept(code,force=false,image=null) {
     if (this.busy || !this.active) return;
@@ -264,9 +264,12 @@ export class PhoneScanner {
       }
       if(this.options.onCode){const result=await this.options.onCode(code,{image:payload.image});this.captured++;const kind=result?.kind||'success';this.paint(kind,result?.message||'Đã điền mã vào mục đã chọn',result?.displayValue||code);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(kind==='error');return;}
       let known=0, online=true;
-      const local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && clean(r.barcode) === code).length;
-      try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
-      catch(e) { if (!e.network) throw e; online=false; }
+      let local=0;
+      if(this.options.mode!=='HS'){
+        local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && clean(r.barcode) === code).length;
+        try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
+        catch(e) { if (!e.network) throw e; online=false; }
+      }
       if (!this.active) return;
       if (this.options.mode!=='HS' && !force && (known>0 || local>0 || this.seen.has(code))) { this.duplicate(code,known,local,online); return; }
       if (!online) {
