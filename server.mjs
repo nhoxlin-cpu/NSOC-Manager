@@ -1,3 +1,4 @@
+import {rememberCodes,currentCodeRows} from './lib/mm-code-registry.mjs';
 import {recoveryBundle} from './lib/recovery.mjs';
 import {scanReport} from './lib/scan-report.mjs';
 import { ckdReport } from './lib/ckd-report.mjs';
@@ -344,9 +345,11 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         });
         if (new Set(checked.map(r => r.item_code)).size !== checked.length || new Set(checked.map(r => r.samsung)).size !== checked.length) fail(400, 'CSV chứa ITEM hoặc mã Samsung trùng.');
         transaction(db, () => {
+          rememberCodes(db,currentCodeRows(db),'Before CSV import',true);
           const save = db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(item_code) DO UPDATE SET samsung=excluded.samsung,item=excluded.item,description=excluded.description,maker=excluded.maker,vendor=excluded.vendor,location=excluded.location,selling_qty=excluded.selling_qty,moq=excluded.moq');
           const stock=db.prepare('INSERT INTO material_stock(item_code,qty,lot_no) VALUES (?,?,?) ON CONFLICT(item_code) DO UPDATE SET qty=CASE WHEN ? THEN excluded.qty ELSE material_stock.qty END,lot_no=CASE WHEN ? THEN excluded.lot_no ELSE material_stock.lot_no END');
           for (const row of checked){save.run(...keys.map(k => row[k]));stock.run(row.item_code,row.qty,row.lot_no,headers.includes('qty')?1:0,headers.includes('lot_no')?1:0);}
+          rememberCodes(db,checked.map(r=>({item_code:r.item_code,item_name:r.item,spec:r.description,vendor:r.vendor})),'CSV MM');
         });
         return send(res, 200, { count: checked.length });
       }
