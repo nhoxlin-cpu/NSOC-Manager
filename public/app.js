@@ -1,4 +1,4 @@
-import {renderHolding} from '/holding.js?v=20261115-cont1';
+import {renderHolding} from '/holding.js?v=20261115-lot1';
 import { renderCutting } from '/cutting.js?v=20261114-23';
 import { renderCkd } from '/ckd.js?v=20261114-34';
 import { PhoneScanner, zxing } from '/scanner.js?v=20261115-39';
