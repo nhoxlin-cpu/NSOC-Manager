@@ -17,7 +17,7 @@ import { initCkd, parseCkdWorkbook, importCkdWorkbook, checkCkd, saveCkd, ckdOve
 import { scanQuantity } from './lib/scan-quantity.mjs';
 import { stockData } from './lib/stock-data.mjs';
 import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
-import { importMMRows,listMM,lookupAndSaveMM } from './lib/mm-data.mjs';
+import { importMMRows,listMM,listMMCodes,lookupAndSaveMM } from './lib/mm-data.mjs';
 import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
 import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
 import {deleteHolding,initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
@@ -290,6 +290,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if(req.method==='POST'&&path==='/api/materials/lookup'){
         const b=await jsonBody(req),q=typeof b.q==='string'?b.q.trim():'';if(q.length>200||!['spec','location','item_code'].includes(b.field))fail(400,'Từ khóa hoặc mục tra cứu không hợp lệ.');const offset=b.offset??0;if(!Number.isSafeInteger(offset)||offset<0||offset>1000000)fail(400,'Trang tra cứu không hợp lệ.');return send(res,200,lookupAndSaveMM(db,{q,field:b.field,offset,saved_id:Number.isSafeInteger(b.saved_id)&&b.saved_id>0?b.saved_id:null},u.id));
+      }
+      if(req.method==='GET'&&path==='/api/materials/codes'){
+        try{return send(res,200,listMMCodes(db,{q:url.searchParams.get('q')||'',offset:Number(url.searchParams.get('offset')||0)}));}catch(e){fail(400,e.message);}
       }
       if (req.method === 'GET' && path === '/api/materials') {
         const q = (url.searchParams.get('q') || '').slice(0, 200);

@@ -372,16 +372,30 @@ async function fillItemCode(code,input) {
 }
 document.addEventListener('visibilitychange', () => { if (document.hidden && $('#camera-dialog').open) $('#camera-dialog').close(); });
 
+
+async function mmCodeDirectory(id){
+ $('#main').innerHTML=`${pageTop('Danh s\u00e1ch code h\u00e0ng','M\u1ed7i ITEM m\u1ed9t d\u00f2ng trong MM','','#mm','Tra c\u1ee9u MM')}<section class="panel"><form id="codes-search"><div class="search-row"><input id="codes-q" maxlength="200" placeholder="T\u00ecm code, t\u00ean h\u00e0ng, Spec, Vendor" aria-label="T\u00ecm code h\u00e0ng"><button class="button primary">T\u00ecm</button></div></form><p id="codes-count" class="muted" role="status"></p><div id="codes-results"></div><button class="button full mt" id="codes-more" hidden>Xem th\u00eam</button></section>`;
+ let rows=[],next=null,version=0,query='';const root=$('#codes-results');
+ async function load(more=false){const epoch=++version;if(!more){query=$('#codes-q').value.trim();rows=[];next=null;}$('#codes-more').disabled=true;
+  try{const result=await api('/materials/codes?q='+encodeURIComponent(query)+'&offset='+(more?next:0));if(id!==renderId||!root.isConnected||epoch!==version)return;rows=more?[...rows,...result.rows]:result.rows;next=result.next;
+   $('#codes-count').textContent=number(rows.length)+' / '+number(result.matched)+' code \u00b7 '+number(result.total)+' code trong MM';
+   root.innerHTML=rows.length?`<div class="table-wrap"><table><thead><tr><th>STT</th><th>ITEM code</th><th>T\u00ean h\u00e0ng</th><th>Spec</th><th>Vendor</th></tr></thead><tbody>${rows.map((r,i)=>`<tr><td>${i+1}</td><td>${escape(r.item_code)}</td><td class="wrap">${escape(r.item_name)||'\u2014'}</td><td class="wrap">${escape(r.spec)||'\u2014'}</td><td class="wrap">${escape(r.vendor)||'\u2014'}</td></tr>`).join('')}</tbody></table></div>`:'<p class="muted">Ch\u01b0a c\u00f3 code h\u00e0ng ph\u00f9 h\u1ee3p.</p>';$('#codes-more').hidden=next===null;
+  }catch(err){if(id===renderId&&root.isConnected&&epoch===version){$('#codes-count').textContent=err.message;$('#codes-more').hidden=true;}}finally{if(id===renderId&&root.isConnected&&epoch===version)$('#codes-more').disabled=false;}
+ }
+ $('#codes-search').onsubmit=event=>{event.preventDefault();load();};$('#codes-more').onclick=()=>load(true);await load();
+}
 async function materials(id) {
   if(!state.user){$('#main').innerHTML=needsLogin('Tra cứu MM');return;}
   const modes={location:'Location',item_code:'Item code',spec:'Spec'};
   const view=new URLSearchParams(location.hash.split('?')[1]||'').get('view');
-  if(!view||(!Object.hasOwn(modes,view)&&view!=='import')){
+  if(!view||(!Object.hasOwn(modes,view)&&view!=='import'&&view!=='codes')){
     const folders=[['location','Location','Tra cứu vị trí vật tư','teal'],['item_code','Item code','Tra cứu theo mã hàng','blue'],['spec','Spec','Tra cứu thông số, mô tả','violet']];
+    folders.push(['codes','Danh s\u00e1ch code h\u00e0ng','Danh m\u1ee5c ITEM trong MM','teal']);
     if(state.user.role==='admin')folders.push(['import','Nhập file','Thêm, cập nhật danh mục MM','amber']);
     $('#main').innerHTML=`${pageTop('Tra cứu MM','Chọn thư mục để tiếp tục')}<nav class="mm-folder-grid" aria-label="Các thư mục MM">${folders.map(([key,label,note,tone])=>`<a class="mm-folder ${tone}" href="#mm?view=${key}" data-mm-folder="${key}"><span class="mm-folder-icon">${icon('folder')}</span><h2>${label}</h2><p>${note}</p><span class="mm-folder-arrow">${icon('arrow')}</span></a>`).join('')}</nav>`;
     return;
   }
+  if(view==='codes'){await mmCodeDirectory(id);return;}
   if(view==='import'){
     $('#main').innerHTML=`${pageTop('Nhập file MM','Cập nhật danh mục dùng chung','','#mm','Tra cứu MM')}<div id="mm-import-page"></div>`;
     if(state.user.role==='admin')mmImportSettings($('#mm-import-page'),true);
