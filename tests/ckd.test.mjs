@@ -117,3 +117,5 @@ assert.ok(db.prepare('SELECT id FROM ckd_checks WHERE id=?').get(d.id));
 assert.equal(db.prepare('SELECT workbook_id FROM ckd_deleted_requests WHERE check_id=?').get(b.id).workbook_id,other.id);
 }finally{db.close();}
 });
+
+test('NG provides exact ITEM and reverse Samsung candidates without changing PASS',()=>{const {db,pair}=fixture();try{const id=pair.workbook_id;const r=checkCkd(db,{workbook_id:id,samsung:'BN83-12345A',item_code:'WRONG'});assert.equal(r.pass,false);assert.deepEqual(r.expected_codes.items,['ITEM-A','ITEM-B']);assert.deepEqual(r.expected_codes.samsung,[]);const reverse=checkCkd(db,{workbook_id:id,samsung:'BN83-99999A',item_code:'ITEM-A'});assert.deepEqual(reverse.expected_codes.samsung,['BN83-12345A']);}finally{db.close();}});

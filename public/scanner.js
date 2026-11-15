@@ -248,6 +248,7 @@ export class PhoneScanner {
   async accept(code,force=false,image=null) {
     if (this.busy || !this.active) return;
     code=clean(code);const raw=code;
+    if(this.options.acceptCode&&!this.options.acceptCode(code)){this.latched='';this.candidate='';return;}
     if(!force && this.options.mode==='HS' && this.lastRead===code)return;
     this.lastRead=code;
     this.stockUI(null);
