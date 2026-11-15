@@ -50,3 +50,4 @@
 @media(max-width:360px){.quality-workspace{padding:23px 18px 66px}.quality-welcome h1{font-size:26px}.quality-welcome .quality-brands{font-size:11px;gap:6px}.quality-welcome .quality-brands span{font-size:6px}.quality-workspace .quality-copy h2{font-size:19px}.quality-workspace .quality-core{width:78px;height:98px}.quality-workspace .quality-caption{font-size:4.5px;letter-spacing:.2px}.workspace-flow{left:18px;gap:4px;font-size:5.5px}.workspace-flow>span,.workspace-flow>strong{gap:3px}}
 @media(prefers-reduced-motion:reduce){.quality-workspace *,.quality-workspace *:before,.quality-workspace *:after{animation:none!important}}
 #ckd-history input[type=checkbox]{width:20px;height:20px;padding:0;border-radius:4px;accent-color:#245bea}#ckd-history .ckd-delete-actions{flex-wrap:wrap;margin-bottom:16px;gap:8px}
+.mm-spec-changed>td{background:#fff4d9}.mm-spec-changed details{margin-top:8px;color:#77520f}
