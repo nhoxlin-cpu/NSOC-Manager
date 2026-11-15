@@ -1,3 +1,4 @@
+import {deleteHolding} from '../lib/holding.mjs';
 import {test} from 'node:test';
 import assert from 'node:assert/strict';
 import {randomUUID} from 'node:crypto';
@@ -106,3 +107,5 @@ test('Holding HTTP upload is admin-only and CSRF protected; lookup, images, expo
  assert.equal((await request('edit-group',0,'POST',group)).status,401);assert.equal((await request('edit-group',3,'POST',group)).status,403);assert.equal((await request('edit-group',2,'POST',group,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await request('edit-group',2,'POST',group)).status,200);assert.equal((await (await request('inventory')).json()).entries[0].remaining_qty,9);
  }finally{server.closeAllConnections();await new Promise(r=>server.close(r));db.close();}
 });
+
+test('admin cabinet removal is atomic, audited, revision checked and retry safe',()=>{const db=setup();try{const a=receiveHolding(db,receive(),1),b=receiveHolding(db,receive({barcode:'OTHER'}),1);const input={request_id:randomUUID(),reason:'Cleanup',rows:[{id:a.id,expected_revision:0},{id:b.id,expected_revision:9}]};assert.throws(()=>deleteHolding(db,input,1));assert.equal(holdingInventory(db).totals.boxes,2);input.rows[1].expected_revision=0;assert.equal(deleteHolding(db,input,1).removed,2);assert.equal(deleteHolding(db,input,1).removed,2);assert.equal(holdingInventory(db).totals.boxes,0);assert.equal(holdingEvents(db).length,4);const newer=receiveHolding(db,receive(),1);deleteHolding(db,input,1);assert.equal(holdingInventory(db).totals.boxes,1);assert(newer.id); }finally{db.close();}});

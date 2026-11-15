@@ -1,3 +1,4 @@
+import {recoveryBundle} from './lib/recovery.mjs';
 import {scanReport} from './lib/scan-report.mjs';
 import { ckdReport } from './lib/ckd-report.mjs';
 import { hsCode } from './public/hs-code.js';
@@ -16,7 +17,7 @@ import { MAX_MM_BYTES,parseMMInWorker } from './lib/mm-workbook.mjs';
 import { importMMRows,listMM,lookupAndSaveMM } from './lib/mm-data.mjs';
 import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
 import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
-import {initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
+import {deleteHolding,initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
 
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
@@ -77,6 +78,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
   const writeAccess = u => { if (!['admin', 'inspector'].includes(u.role)) fail(403, 'Tài khoản chỉ có quyền xem.'); };
   const adminAccess = u => { if (u.role !== 'admin') fail(403, 'Chỉ quản trị viên được thực hiện thao tác này.'); };
 
+  let recoveryBusy=false;
   const server = createServer(async (req, res) => {
     res.setHeader('X-Content-Type-Options', 'nosniff');
     res.setHeader('Referrer-Policy', 'same-origin');
@@ -145,6 +147,8 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if(path.startsWith('/api/holding/v2/')){
         const action=path.slice('/api/holding/v2/'.length),query=Object.fromEntries(url.searchParams);
+        if(req.method==='GET'&&action==='delete-preview'){adminAccess(u);const rows=db.prepare('SELECT id,revision AS expected_revision FROM holding_entries WHERE remaining_qty>0 ORDER BY id LIMIT 10001').all();if(rows.length>10000)fail(400,'T? c? h?n 10.000 box, h?y x?a theo t?ng box.');return send(res,200,{rows});}
+        if(req.method==='POST'&&action==='delete'){adminAccess(u);return send(res,200,deleteHolding(db,await jsonBody(req),u.id));}
         if(req.method==='GET'&&action==='reference')return send(res,200,holdingReference(db));
         if(req.method==='GET'&&action==='lookup')return send(res,200,holdingLookup(db,query.barcode));
         if(req.method==='GET'&&action==='preferences')return send(res,200,holdingPreferences(db,u.id));
@@ -188,6 +192,11 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const password = await hashPassword(validPassword(body.password));
         transaction(db, () => { db.prepare('UPDATE users SET password=? WHERE id=?').run(password, u.id); db.prepare('DELETE FROM sessions WHERE user_id=?').run(u.id); });
         return send(res, 200, { ok: true }, { 'Set-Cookie': cookie('', true) });
+      }
+      if(req.method==='POST'&&path==='/api/server-backup'){
+        adminAccess(u);if(recoveryBusy)fail(409,'A server backup is already running.');recoveryBusy=true;let bundle;
+        try{bundle=await recoveryBundle(db,fileURLToPath(new URL('./',import.meta.url)),origin);res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="WorkArea-server-backup.zip"','Cache-Control':'no-store'});await streamZip(res,bundle.entries());}finally{await bundle?.cleanup();recoveryBusy=false;}
+        return;
       }
       if (req.method === 'GET' && path === '/api/users') {
         adminAccess(u); return send(res, 200, { users: db.prepare('SELECT id,username,name,role,active FROM users ORDER BY id').all() });

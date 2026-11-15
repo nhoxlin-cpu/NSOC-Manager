@@ -1,4 +1,4 @@
-import {renderHolding} from '/holding.js?v=20261114-32';
+import {renderHolding} from '/holding.js?v=20261115-delete1';
 import { renderCutting } from '/cutting.js?v=20261114-23';
 import { renderCkd } from '/ckd.js?v=20261114-34';
 import { PhoneScanner, zxing } from '/scanner.js?v=20261115-39';
@@ -156,6 +156,10 @@ async function account() {
   $('#logout').onclick = async () => { try { await api('/logout', { method:'POST' }); state.user = null; state.csrf = null; state.image = null; state.imageName = '';renderNavigation();render(); toast('Đã đăng xuất.'); } catch(e) { toast(e.message); } };
   formAction('#password-form', async b => { if (b.password !== b.confirm) throw Error('Hai mật khẩu mới không khớp.'); await api('/password', { method:'POST', data:b }); state.user = null; state.csrf = null;renderNavigation();render(); toast('Đã đổi mật khẩu. Vui lòng đăng nhập lại.'); });
   formAction('#user-form', async (b, f) => { await api('/users', { method:'POST', data:b }); f.reset(); toast('Đã tạo tài khoản.'); await usersList(); });
+  if(u.role==='admin'){
+    const panel=document.createElement('section');panel.className='panel';panel.innerHTML=`<h2>Sao lưu server</h2><p class="muted">Tải mã ứng dụng, dữ liệu, tài khoản và ảnh để khôi phục trên VPS khác. Giữ file ZIP ở ngoài VPS và bảo mật file này. Hướng dẫn phục hồi nằm trong ZIP.</p><button class="button primary" id="server-backup">Tải bản sao lưu server</button><p id="server-backup-status" role="status"></p>`;$('.account-layout').append(panel);
+    $('#server-backup').onclick=async event=>{const b=event.currentTarget;b.disabled=true;$('#server-backup-status').textContent='Đang tạo bản sao lưu…';try{const response=await fetch('/api/server-backup',{method:'POST',headers:{'X-CSRF-Token':state.csrf}});if(!response.ok){const error=await response.json();throw Error(error.error);}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='WorkArea-server-backup.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$('#server-backup-status').textContent='Đã tải bản sao lưu. Giữ file ở thiết bị khác VPS.';}catch(err){$('#server-backup-status').textContent=err.message;}finally{b.disabled=false;}};
+  }
   mmImportSettings();
   shortcutSettings();
   if (u.role === 'admin') await usersList();
