@@ -72,7 +72,8 @@ function imageData(source) {
   return { mime, buffer };
 }
 
-export async function createApp({ db = openDatabase(), origin = process.env.APP_ORIGIN || '', production = process.env.NODE_ENV === 'production', recoveryArchive=fileURLToPath(new URL('./private/recovery-backup.zip',import.meta.url)),offlineDirectory=fileURLToPath(new URL('./private/offline-snapshots/',import.meta.url)) } = {}) {
+export async function createApp({ db = openDatabase(), origin = process.env.APP_ORIGIN || '', production = process.env.NODE_ENV === 'production', recoveryArchive=fileURLToPath(new URL('./private/recovery-backup.zip',import.meta.url)),offlineDirectory=fileURLToPath(new URL('./private/offline-snapshots/',import.meta.url)),webDirectory=fileURLToPath(new URL('./web-offline/',import.meta.url)) } = {}) {
+  let webFiles=new Set();if(webDirectory){try{const manifest=JSON.parse(await readFile(resolve(webDirectory,'web-manifest.json'),'utf8'));if(!Array.isArray(manifest.files)||manifest.files.some(p=>typeof p!=='string'||p.includes('..')||p.includes('\\')||p.startsWith('/')))throw Error('Invalid offline web manifest');webFiles=new Set(manifest.files);}catch(error){if(error.code!=='ENOENT')throw error;}}
   initCkd(db);
   initHolding(db);
   initOffline(db);let snapshotBusy=false;
@@ -89,11 +90,17 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
     res.setHeader('Referrer-Policy', 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
     res.setHeader('Permissions-Policy', 'camera=(self), microphone=(), geolocation=()');
-    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
+    res.setHeader('Content-Security-Policy', "default-src 'self'; script-src 'self' 'wasm-unsafe-eval'; worker-src 'self'; style-src 'self'; img-src 'self' data: blob:; connect-src 'self'; font-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'");
     if (production) res.setHeader('Strict-Transport-Security', 'max-age=31536000');
     try {
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (!path.startsWith('/api/')) {
+        const webPath=path==='/'?'index.html':path.slice(1);
+        if(webFiles.has(webPath)){
+          if(!['GET','HEAD'].includes(req.method))fail(405,'Method not allowed');
+          const ext=webPath.split('.').at(-1),mime={html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',json:'application/json',webmanifest:'application/manifest+json',wasm:'application/wasm',svg:'image/svg+xml',txt:'text/plain; charset=utf-8'}[ext]||'application/octet-stream';
+          const content=await readFile(resolve(webDirectory,webPath));res.writeHead(200,{'Content-Type':mime,'Content-Length':content.length,'Cache-Control':'no-cache',...(webPath==='sw.js'?{'Service-Worker-Allowed':'/'}:{})});return res.end(req.method==='HEAD'?undefined:content);
+        }
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
         if(['/downloads/WorkArea-Android-1.0.0.apk','/downloads/WorkArea-Offline-1.0.0.apk'].includes(path)){
           const filename=path.split('/').at(-1),buffer=await readFile(resolve(publicDir,'downloads',filename));
@@ -108,7 +115,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-flow-20261115-42' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'web-offline-20261115-43' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
