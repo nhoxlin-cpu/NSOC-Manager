@@ -1,0 +1,17 @@
+import fs from 'node:fs';
+import path from 'node:path';
+import {fileURLToPath} from 'node:url';
+import {createHash} from 'node:crypto';
+import {createRequire} from 'node:module';
+const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
+process.env.WORKAREA_OFFLINE_OUTPUT=process.env.WORKAREA_WEB_OUTPUT||path.join(root,'web-offline');
+await import('./build-assets.mjs');
+const out=path.resolve(process.env.WORKAREA_OFFLINE_OUTPUT);
+fs.copyFileSync(path.join(root,'offline/web-boot.mjs'),path.join(out,'web-boot.js'));
+const app=path.join(out,'app.js');fs.writeFileSync(app,"import {lockWebWorkspace,enableWebOffline} from '/web-boot.js';\nawait lockWebWorkspace();\n"+fs.readFileSync(app,'utf8').replace('await offlineClient.ready();','await offlineClient.ready();\nenableWebOffline(offlineClient);'));
+const files=[];function walk(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory())walk(p);else if(!['sw.js','web-manifest.json'].includes(e.name))files.push(path.relative(out,p).replaceAll('\\','/'));}}walk(out);
+const version=createHash('sha256').update(files.sort().map(p=>p+createHash('sha256').update(fs.readFileSync(path.join(out,p))).digest('hex')).join('\n')).digest('hex').slice(0,20);
+const template=fs.readFileSync(path.join(root,'offline/web-worker.js'),'utf8');fs.writeFileSync(path.join(out,'sw.js'),template.replace('__VERSION__',version).replace('__ASSETS__',JSON.stringify(files.map(p=>'/'+p))));
+fs.writeFileSync(path.join(out,'web-manifest.json'),JSON.stringify({version,files:[...files,'sw.js']}));
+const require=createRequire(path.resolve(process.env.WORKAREA_OFFLINE_TOOLS,'package.json')),{zipSync}=require('fflate'),entries={};for(const file of [...files,'sw.js','web-manifest.json'])entries[file]=new Uint8Array(fs.readFileSync(path.join(out,file)));fs.writeFileSync(path.join(root,'offline/web-release.zip'),zipSync(entries,{level:6}));
+console.log(JSON.stringify({webVersion:version,files:files.length,output:out}));

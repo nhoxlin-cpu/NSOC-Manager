@@ -1,7 +1,7 @@
 import {renderHolding} from '/holding.js?v=20261115-regname1';
 import { renderCutting } from '/cutting.js?v=20261114-23';
-import { renderCkd } from '/ckd.js?v=20261114-34';
-import { PhoneScanner, zxing } from '/scanner.js?v=20261115-39';
+import { renderCkd } from '/ckd.js?v=20261115-42';
+import { PhoneScanner, zxing } from '/scanner.js?v=20261115-41';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 const icons = {
@@ -115,14 +115,12 @@ function formAction(selector, handler) {
 const routes = [['home', 'home', 'Trang chủ'], ['scan', 'scan', 'Quét mã'], ['ckd', 'ckd', 'Kiểm tra CKD'], ['cut', 'cut', 'Cắt chân linh kiện'], ['holding', 'box', 'Holding room'], ['mm', 'search', 'Tra cứu MM'], ['assistant', 'assistant', 'Trợ lý'], ['account', 'user', 'Tài khoản']];
 const shortLabels={home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt chân',holding:'Holding',mm:'Tra MM',assistant:'Trợ lý',account:'Tài khoản'};
 function renderNavigation() {
-  const backupLink=$('#backup-menu-link');if(backupLink)backupLink.hidden=state.user?.role!=='admin';
   const keys=state.user ? state.navigation : defaultNavigation;
   $('.bottom-nav').innerHTML=keys.filter(key=>routes.some(r=>r[0]===key)).map(key=>{const route=routes.find(r=>r[0]===key);return `<a href="#${key}" data-nav="${key}" aria-label="${route[2]}" ${state.page===key?'class="active" aria-current="page"':''}>${icon(route[1])}<span>${shortLabels[key]}</span></a>`;}).join('');
 }
 $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
-$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="backup-menu-link" href="#backup" hidden>${icon('download')} Sao lưu máy chủ</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
-$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} Tải APK Online</a><a class="menu-link" href="#offline-app">${icon('download')} APK Online + Offline</a>`);
+$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#downloads">${icon('download')} T\u1ea3i xu\u1ed1ng & Sao l\u01b0u</a>`);
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = () => el.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(el => el.addEventListener('click', e => { if (e.target === el) { const r = el.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) el.close(); } }));
@@ -156,10 +154,7 @@ async function account() {
   $('#logout').onclick = async () => { try { await api('/logout', { method:'POST' }); state.user = null; state.csrf = null; state.image = null; state.imageName = '';renderNavigation();render(); toast('Đã đăng xuất.'); } catch(e) { toast(e.message); } };
   formAction('#password-form', async b => { if (b.password !== b.confirm) throw Error('Hai mật khẩu mới không khớp.'); await api('/password', { method:'POST', data:b }); state.user = null; state.csrf = null;renderNavigation();render(); toast('Đã đổi mật khẩu. Vui lòng đăng nhập lại.'); });
   formAction('#user-form', async (b, f) => { await api('/users', { method:'POST', data:b }); f.reset(); toast('Đã tạo tài khoản.'); await usersList(); });
-  if(u.role==='admin'){
-    const panel=document.createElement('section');panel.className='panel';panel.innerHTML=`<h2>Sao lưu server</h2><p class="muted">Tải mã ứng dụng, dữ liệu, tài khoản và ảnh để khôi phục trên VPS khác. Giữ file ZIP ở ngoài VPS và bảo mật file này. Hướng dẫn phục hồi nằm trong ZIP.</p><button class="button primary" id="server-backup">Tải bản sao lưu server</button><p id="server-backup-status" role="status"></p>`;$('.account-layout').append(panel);
-    $('#server-backup').onclick=async event=>{const b=event.currentTarget;b.disabled=true;$('#server-backup-status').textContent='Đang tạo bản sao lưu…';try{const response=await fetch('/api/server-backup',{method:'POST',headers:{'X-CSRF-Token':state.csrf}});if(!response.ok){const error=await response.json();throw Error(error.error);}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='WorkArea-server-backup.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$('#server-backup-status').textContent='Đã tải bản sao lưu. Giữ file ở thiết bị khác VPS.';}catch(err){$('#server-backup-status').textContent=err.message;}finally{b.disabled=false;}};
-  }
+
   mmImportSettings();
   shortcutSettings();
   if (u.role === 'admin') await usersList();
@@ -465,24 +460,35 @@ async function cutting() {
   });
 }
 
-function offlineAppPage(){
- document.title='APK Online + Offline · Work Area';
- $('#main').innerHTML=pageTop('Work Area Offline','APK Android · Online + Offline')+`<section class="panel"><span class="badge green">Phiên bản 1.0.0</span><h2 class="mt">Làm việc khi mất kết nối</h2><p>Quét HS / Stock / Label, tra MM, kiểm tra CKD, nhập / xuất / sửa Holding và cắt chân linh kiện bằng dữ liệu đã tải về máy.</p><a class="button primary full mt" id="download-offline-apk" href="/downloads/WorkArea-Offline-1.0.0.apk" download>${icon('download')} Tải APK Online + Offline</a><ol><li>Cài APK và mở <strong>Work Area Offline</strong>. Cho phép dùng camera.</li><li>Lần đầu, đăng nhập khi có mạng và chờ tải xong dữ liệu offline.</li><li>Khi mất mạng hoặc server lỗi, tiếp tục làm việc. Dữ liệu mới giữ trong hàng chờ trên điện thoại.</li><li>Mở app khi có mạng để tự gửi lại. Vào <strong>Online & Offline · Đồng bộ</strong> để xem trạng thái, cập nhật dữ liệu và xử lý lượt bị báo lỗi.</li></ol><p class="notice warning">Số lượng và tồn kho khi offline là tạm tính đến khi server xác nhận. Không xóa dữ liệu hoặc gỡ app khi còn hàng chờ.</p><p class="muted">Android 8 trở lên, cập nhật Android System WebView. Nhập file và quản lý tài khoản cần mạng. Trước khi chuyển từ APK cũ, gửi hết hàng chờ trong app cũ.</p></section>`;
+function offlineAppPage(){location.replace('#downloads');}
+function backup(){location.replace('#downloads');}
+async function renderHubSync(){
+ $('#hub-sync').innerHTML='<h2>Online & Offline</h2><p>Tải lại web để mở phần đồng bộ. Lần đầu cần đăng nhập và tải xong dữ liệu trước khi mất mạng.</p>';
 }
-async function backup(){
-  if(!state.user){$('#main').innerHTML=needsLogin('Sao lưu máy chủ');return;}
-  if(state.user.role!=='admin'){$('#main').innerHTML=pageTop('Sao lưu máy chủ','')+'<section class="panel">Chỉ tài khoản quản trị được tải bản sao lưu.</section>';return;}
-  $('#main').innerHTML=pageTop('Sao lưu máy chủ','Khôi phục Work Area trên VPS khác')+'<section class="panel" id="backup-panel"><p role="status">Đang kiểm tra bản sao lưu…</p></section>';
-  const panel=$('#backup-panel');
+async function downloadHub(){
+ document.title='Tải xuống & Sao lưu · Work Area';
+ $('#main').innerHTML=pageTop('Tải xuống & Sao lưu','Ứng dụng · Đồng bộ · Khôi phục')+`<section class="panel"><h2>Ứng dụng Android</h2><p class="muted">Chọn bản phù hợp với cách làm việc.</p><div class="actions equal"><a class="button" id="download-online-apk" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} APK Online</a><a class="button primary" id="download-offline-apk" href="/downloads/WorkArea-Offline-1.0.0.apk" download>${icon('download')} APK Online + Offline</a></div><details class="mt"><summary>Hướng dẫn cài đặt</summary><p>Android 8 trở lên. Cài APK, cấp quyền camera, đăng nhập có mạng và chờ tải xong dữ liệu. Gửi hết hàng chờ trước khi đổi bản cài; không gỡ app khi còn lượt chờ.</p></details></section><section id="hub-sync"></section><section class="panel"><h2>Sao lưu & Khôi phục</h2><div id="backup-panel"></div></section><div id="hub-fresh-backup"></div>`;
+   if(state.user?.role==='admin'){
+    const panel=document.createElement('section');panel.className='panel';panel.innerHTML=`<h2>Sao lưu server</h2><p class="muted">Tải mã ứng dụng, dữ liệu, tài khoản và ảnh để khôi phục trên VPS khác. Giữ file ZIP ở ngoài VPS và bảo mật file này. Hướng dẫn phục hồi nằm trong ZIP.</p><button class="button primary" id="server-backup">Tải bản sao lưu server</button><p id="server-backup-status" role="status"></p>`;$('#hub-fresh-backup').append(panel);
+    $('#server-backup').onclick=async event=>{const b=event.currentTarget;b.disabled=true;$('#server-backup-status').textContent='Đang tạo bản sao lưu…';try{const response=await fetch('/api/server-backup',{method:'POST',headers:{'X-CSRF-Token':state.csrf}});if(!response.ok){const error=await response.json();throw Error(error.error);}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='WorkArea-server-backup.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$('#server-backup-status').textContent='Đã tải bản sao lưu. Giữ file ở thiết bị khác VPS.';}catch(err){$('#server-backup-status').textContent=err.message;}finally{b.disabled=false;}};
+  }
+ await Promise.allSettled([renderHubSync(),renderHubBackup()]);
+}
+async function renderHubBackup(){
+ const panel=$('#backup-panel');if(!panel)return;
+ if(!state.user){panel.innerHTML='<p>Đăng nhập tài khoản quản trị để tải bản sao lưu.</p><a class="button" href="#account">Đăng nhập</a>';return;}
+ if(state.user.role!=='admin'){panel.innerHTML='<p class="muted">Chỉ tài khoản quản trị được tải bản sao lưu máy chủ.</p>';return;}
+ panel.innerHTML='<p role="status">Đang kiểm tra bản sao lưu…</p>';
   try{const info=await api('/admin/recovery-backup/info');if(!panel.isConnected)return;const date=info.created_at?new Intl.DateTimeFormat('vi-VN',{dateStyle:'short',timeStyle:'short',timeZone:'Asia/Ho_Chi_Minh'}).format(new Date(info.created_at)):'';
     panel.innerHTML=`<span class="badge green">Có bản sao lưu</span><h2 class="mt">Bản sao lưu đã tạo</h2><p class="muted">${date?escape(date)+' · GMT+7 · ':''}ZIP · ${number(Math.round(info.size_bytes/100000)/10)} MB</p><p>Dữ liệu, tài khoản, ảnh scan, mã nguồn và hướng dẫn khôi phục.</p><a class="button primary full mt" id="backup-download" href="/api/admin/recovery-backup" download="WorkArea-Recovery.zip">${icon('download')} Tải bản sao lưu ZIP</a><a class="button full mt" id="backup-guide-download" href="/api/admin/recovery-backup/guide" download="Huong-dan-khoi-phuc-WorkArea.txt">${icon('download')} Tải hướng dẫn cài đặt / khôi phục VPS</a><p class="muted mt">Lưu file ở máy hoặc cloud riêng ngoài VPS. Nút tải lấy bản đã lưu; chưa có sao lưu tự động.</p>`;
-  }catch(error){if(panel.isConnected)panel.innerHTML=`<p role="alert">${escape(error.message)}</p><button class="button" id="backup-retry">Thử lại</button>`;$('#backup-retry')?.addEventListener('click',backup);}
+  }catch(error){if(panel.isConnected)panel.innerHTML=`<p role="alert">${escape(error.message)}</p><button class="button" id="backup-retry">Thử lại</button>`;$('#backup-retry')?.addEventListener('click',renderHubBackup);}
 }
+
 async function render() {
   const id = ++renderId; const page = location.hash.slice(1).split('?')[0] || 'home'; state.page = page;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage }[page];
+  const route = { home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
   document.title = `${routes.find(r => r[0] === page)?.[2] || 'Trang chủ'} · Work Area`;
   try { await (route || home)(id); } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }
