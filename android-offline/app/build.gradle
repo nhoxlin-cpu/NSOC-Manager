@@ -1,0 +1,18 @@
+plugins { id 'com.android.application' }
+android {
+ namespace 'vn.hansol.workarea.offline'
+ compileSdk 36
+ defaultConfig { applicationId 'vn.hansol.workarea.offline'; minSdk 26; targetSdk 36; versionCode 1; versionName '1.0.0' }
+ signingConfigs {
+  release {
+   if(System.getenv('WORKAREA_KEYSTORE')) {
+    storeFile file(System.getenv('WORKAREA_KEYSTORE'))
+    storePassword System.getenv('WORKAREA_SIGN_PASSWORD')
+    keyAlias 'workarea-offline'
+    keyPassword System.getenv('WORKAREA_SIGN_PASSWORD')
+   }
+  }
+ }
+ compileOptions { sourceCompatibility JavaVersion.VERSION_17; targetCompatibility JavaVersion.VERSION_17 }
+ buildTypes { release { minifyEnabled false; signingConfig signingConfigs.release } }
+}

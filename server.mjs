@@ -5,6 +5,9 @@ import { hsCode } from './public/hs-code.js';
 import { createServer } from 'node:http';
 import { readFile, open } from 'node:fs/promises';
 import { pipeline } from 'node:stream/promises';
+import { unlink } from 'node:fs/promises';
+import {initOffline,offlineRealm,makeOfflineSnapshot,replayOffline} from './lib/offline-server.mjs';
+import {createGzip} from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import { resolve } from 'node:path';
 import { openDatabase, transaction } from './lib/db.mjs';
@@ -68,9 +71,10 @@ function imageData(source) {
   return { mime, buffer };
 }
 
-export async function createApp({ db = openDatabase(), origin = process.env.APP_ORIGIN || '', production = process.env.NODE_ENV === 'production', recoveryArchive=fileURLToPath(new URL('./private/recovery-backup.zip',import.meta.url)) } = {}) {
+export async function createApp({ db = openDatabase(), origin = process.env.APP_ORIGIN || '', production = process.env.NODE_ENV === 'production', recoveryArchive=fileURLToPath(new URL('./private/recovery-backup.zip',import.meta.url)),offlineDirectory=fileURLToPath(new URL('./private/offline-snapshots/',import.meta.url)) } = {}) {
   initCkd(db);
   initHolding(db);
+  initOffline(db);let snapshotBusy=false;
   if (production && !/^https:\/\/[^/]+$/.test(origin)) throw new Error('Production cần APP_ORIGIN=https://ten-mien-cua-ban (không có dấu / cuối).');
   const dummy = await hashPassword('unused-' + crypto.randomUUID());
   const send = (res, status, data, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(data)); };
@@ -90,9 +94,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (!path.startsWith('/api/')) {
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
-        if(path==='/downloads/WorkArea-Android-1.0.0.apk'){
-          const buffer=await readFile(resolve(publicDir,'downloads/WorkArea-Android-1.0.0.apk'));
-          res.writeHead(200,{'Content-Type':'application/vnd.android.package-archive','Content-Disposition':'attachment; filename="WorkArea-Android-1.0.0.apk"','Content-Length':buffer.length,'Cache-Control':'no-cache'});
+        if(['/downloads/WorkArea-Android-1.0.0.apk','/downloads/WorkArea-Offline-1.0.0.apk'].includes(path)){
+          const filename=path.split('/').at(-1),buffer=await readFile(resolve(publicDir,'downloads',filename));
+          res.writeHead(200,{'Content-Type':'application/vnd.android.package-archive','Content-Disposition':'attachment; filename="'+filename+'"','Content-Length':buffer.length,'Cache-Control':'no-cache'});
           return res.end(req.method==='HEAD'?undefined:buffer);
         }
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
@@ -103,7 +107,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'hs-fast-20261115-39' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'offline-apk-20261115-40' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
@@ -135,6 +139,11 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const u = sessionUser(db, req.headers.cookie);
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');
       if (mutating && req.headers['x-csrf-token'] !== u.csrf) fail(403, 'Phiên thao tác không hợp lệ. Hãy tải lại trang.');
+      if(req.method==='POST'&&path==='/api/offline/replay'){const packet=await jsonBody(req,10*1024*1024);if(packet.realm!==offlineRealm(db))fail(409,'Bộ dữ liệu server đã thay đổi. Hàng chờ giữ nguyên; cần khôi phục đúng database.');return send(res,200,replayOffline(db,u,packet));}
+      if(req.method==='GET'&&path==='/api/offline/snapshot'){
+        if(snapshotBusy)fail(429,'Máy chủ đang chuẩn bị dữ liệu offline. Thử lại sau ít giây.');let snapshot,file;snapshotBusy=true;
+        try{snapshot=await makeOfflineSnapshot(db,u,offlineDirectory);snapshotBusy=false;file=await open(snapshot.file,'r');const info=await file.stat(),gzip=/\bgzip\b/.test(req.headers['accept-encoding']||'');res.writeHead(200,{'Content-Type':'application/vnd.sqlite3',...(gzip?{'Content-Encoding':'gzip'}:{'Content-Length':info.size}),'Vary':'Accept-Encoding','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff','X-WorkArea-Snapshot-At':snapshot.at,'X-WorkArea-User':encodeURIComponent(JSON.stringify(snapshot.user))});if(gzip)await pipeline(file.createReadStream(),createGzip({level:1}),res);else await pipeline(file.createReadStream(),res);}finally{snapshotBusy=false;if(file)await file.close();if(snapshot)await unlink(snapshot.file).catch(()=>{});}return;
+      }
       if(req.method==='GET'&&path==='/api/admin/recovery-backup/guide'){
         adminAccess(u);let guide;try{guide=await readFile(recoveryArchive+'.guide.txt');}catch(error){if(error.code==='ENOENT')fail(404,'Chưa có hướng dẫn khôi phục để tải.');throw error;}
         res.writeHead(200,{'Content-Type':'text/plain; charset=utf-8','Content-Disposition':'attachment; filename="Huong-dan-khoi-phuc-WorkArea.txt"','Cache-Control':'private, no-store','X-Content-Type-Options':'nosniff'});return res.end(guide);
