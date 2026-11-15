@@ -432,6 +432,14 @@ test('HS canonical codes share duplicate counts while raw labels, other modes an
   for(const mode of ['Stock','Label']){const result=await request('/api/scans',inspector,'POST',{...a,mode,request_id:randomUUID()});assert.equal(result.status,201);assert.equal(db.prepare('SELECT barcode FROM scans WHERE id=?').get(result.data.id).barcode,a.barcode);}
 });
 
+test('server recovery and Holding removal require admin and valid CSRF',async()=>{
+ assert.equal((await request('/api/server-backup',viewer,'POST')).status,403);
+ assert.equal((await request('/api/server-backup',admin,'POST',{}, {'X-CSRF-Token':'bad'})).status,403);
+ assert.equal((await request('/api/holding/v2/delete-preview',viewer)).status,403);
+ assert.equal((await request('/api/holding/v2/delete',inspector,'POST',{rows:[]})).status,403);
+ const r=await fetch(base+'/api/server-backup',{method:'POST',headers:{Cookie:admin.cookie,'X-CSRF-Token':admin.csrf}});assert.equal(r.status,200);assert.match(r.headers.get('content-disposition'),/attachment/);assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0,4).toString('hex'),'504b0304');
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);
