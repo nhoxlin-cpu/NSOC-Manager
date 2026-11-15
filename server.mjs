@@ -1,3 +1,6 @@
+import {EventEmitter} from 'node:events';
+import {initWatch,watchRate,pairStart,approvePair,redeemPair,watchDevice,senderStatus,setSender,revokeWatch,publishWatch,watchHistory} from './lib/watch.mjs';
+import {watchPushConfigured,flushWatchPush} from './lib/watch-push.mjs';
 import {rememberCodes,currentCodeRows} from './lib/mm-code-registry.mjs';
 import {recoveryBundle} from './lib/recovery.mjs';
 import {scanReport} from './lib/scan-report.mjs';
@@ -76,7 +79,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
   let webFiles=new Set();if(webDirectory){try{const manifest=JSON.parse(await readFile(resolve(webDirectory,'web-manifest.json'),'utf8'));if(!Array.isArray(manifest.files)||manifest.files.some(p=>typeof p!=='string'||p.includes('..')||p.includes('\\')||p.startsWith('/')))throw Error('Invalid offline web manifest');webFiles=new Set(manifest.files);}catch(error){if(error.code!=='ENOENT')throw error;}}
   initCkd(db);
   initHolding(db);
-  initOffline(db);let snapshotBusy=false;
+  initOffline(db);initWatch(db);const watchBus=new EventEmitter();let snapshotBusy=false;let watchPushBusy=false;const push=async()=>{if(watchPushBusy)return;watchPushBusy=true;try{await flushWatchPush(db);}finally{watchPushBusy=false;}};const watchTimer=setInterval(()=>push().catch(()=>{}),15000);watchTimer.unref();
   if (production && !/^https:\/\/[^/]+$/.test(origin)) throw new Error('Production cần APP_ORIGIN=https://ten-mien-cua-ban (không có dấu / cuối).');
   const dummy = await hashPassword('unused-' + crypto.randomUUID());
   const send = (res, status, data, headers = {}) => { res.writeHead(status, { 'Content-Type': 'application/json; charset=utf-8', ...headers }); res.end(JSON.stringify(data)); };
@@ -102,25 +105,38 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
           const content=await readFile(resolve(webDirectory,webPath));res.writeHead(200,{'Content-Type':mime,'Content-Length':content.length,'Cache-Control':'no-cache',...(webPath==='sw.js'?{'Service-Worker-Allowed':'/'}:{})});return res.end(req.method==='HEAD'?undefined:content);
         }
         if (req.method !== 'GET' && req.method !== 'HEAD') fail(405, 'Phương thức không được hỗ trợ.');
-        if(['/downloads/WorkArea-Android-1.0.0.apk','/downloads/WorkArea-Offline-1.0.0.apk'].includes(path)){
+        if(['/downloads/WorkArea-Android-1.0.0.apk','/downloads/WorkArea-Offline-1.0.0.apk','/downloads/WorkArea-Watch-1.0.0.apk'].includes(path)){
           const filename=path.split('/').at(-1),buffer=await readFile(resolve(publicDir,'downloads',filename));
           res.writeHead(200,{'Content-Type':'application/vnd.android.package-archive','Content-Disposition':'attachment; filename="'+filename+'"','Content-Length':buffer.length,'Cache-Control':'no-cache'});
           return res.end(req.method==='HEAD'?undefined:buffer);
         }
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/watch-results.js':['watch-results.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'download-hub-20261115-44' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'watch-20261115-46' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {
         const allowed = origin || `http://${req.headers.host}`;
         if (req.headers.origin !== allowed) fail(403, 'Nguồn yêu cầu không hợp lệ.');
+      }
+      if(path.startsWith('/api/watch/'))res.setHeader('Cache-Control','private, no-store');
+      if(req.method==='POST'&&path==='/api/watch/pair/start'){watchRate(db,'start:'+req.socket.remoteAddress,20);return send(res,200,pairStart(db));}
+      if(req.method==='POST'&&path==='/api/watch/pair/redeem'){watchRate(db,'redeem:'+req.socket.remoteAddress,300);return send(res,200,redeemPair(db,await jsonBody(req,4096)));}
+      if(path.startsWith('/api/watch/device/')){
+        const device=watchDevice(db,req.headers.authorization);
+        if(path==='/api/watch/device/events'&&req.method==='GET'){
+          const after=Number(url.searchParams.get('after')||0),latest=watchHistory(db,device).events[0]?.sequence||0;
+          if(url.searchParams.get('wait')==='1'&&Number.isSafeInteger(after)&&latest<=after)await new Promise(resolve=>{const key=device.user_id+':'+device.source_id,done=()=>{clearTimeout(timer);watchBus.off(key,done);res.off('close',done);resolve();},timer=setTimeout(done,20000);watchBus.once(key,done);res.once('close',done);});
+          if(res.destroyed)return;const current=watchDevice(db,req.headers.authorization);return send(res,200,{...watchHistory(db,current),push_configured:watchPushConfigured()});
+        }
+        if(path==='/api/watch/device/push-token'&&req.method==='POST'){const body=await jsonBody(req,4096),token=text(body.token,'Push token',2000);db.prepare('UPDATE watch_devices SET push_token=? WHERE id=?').run(token,device.id);return send(res,200,{ok:true,push_configured:watchPushConfigured()});}
+        fail(404,'Kh?ng c? API ??ng h? n?y.');
       }
       if (req.method === 'GET' && path === '/api/me') {
         const u = sessionUser(db, req.headers.cookie);
@@ -147,6 +163,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const u = sessionUser(db, req.headers.cookie);
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');
       if (mutating && req.headers['x-csrf-token'] !== u.csrf) fail(403, 'Phiên thao tác không hợp lệ. Hãy tải lại trang.');
+      if(path.startsWith('/api/watch/')){
+        if(path==='/api/watch/sender'&&req.method==='GET')return send(res,200,{...senderStatus(db,u,url.searchParams.get('source_id')),push_configured:watchPushConfigured()});
+        if(path==='/api/watch/pair/approve'&&req.method==='POST'){watchRate(db,'approve:'+u.id,15);return send(res,200,approvePair(db,u,await jsonBody(req,4096)));}
+        if(path==='/api/watch/sender'&&req.method==='POST'){const b=await jsonBody(req,4096),r=setSender(db,u,b);watchBus.emit(u.id+':'+b.source_id);return send(res,200,r);}
+        if(path==='/api/watch/revoke'&&req.method==='POST'){const b=await jsonBody(req,4096),r=revokeWatch(db,u,b);watchBus.emit(u.id+':'+b.source_id);return send(res,200,r);}
+        if(path==='/api/watch/events'&&req.method==='POST'){const b=await jsonBody(req,16384),result=publishWatch(db,u,b);watchBus.emit(u.id+':'+b.source_id);push().catch(()=>{});return send(res,200,result);}
+        fail(404,'Kh?ng c? API ??ng h? n?y.');
+      }
       if(req.method==='POST'&&path==='/api/offline/replay'){const packet=await jsonBody(req,10*1024*1024);if(packet.realm!==offlineRealm(db))fail(409,'Bộ dữ liệu server đã thay đổi. Hàng chờ giữ nguyên; cần khôi phục đúng database.');return send(res,200,replayOffline(db,u,packet));}
       if(req.method==='GET'&&path==='/api/offline/snapshot'){
         if(snapshotBusy)fail(429,'Máy chủ đang chuẩn bị dữ liệu offline. Thử lại sau ít giây.');let snapshot,file;snapshotBusy=true;
@@ -476,6 +500,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
     }
   });
   server.requestTimeout = 300_000; server.headersTimeout = 15_000;
+  server.on('close',()=>clearInterval(watchTimer));
   return server;
 }
 

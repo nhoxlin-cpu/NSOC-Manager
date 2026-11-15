@@ -84,7 +84,7 @@ export async function renderCkd(ctx){
   async function showCheck(data,requestId=crypto.randomUUID(),evidence={...images},edit={open:[],qtyOverride:Object.hasOwn(data,'qty')}){
     if(!$('#ckd-pair-form')||state.user?.id!==owner)return;
     const version=++checkEpoch;
-    const r=await api('/ckd/pair/check',{method:'POST',data});
+    const r=await api('/ckd/pair/check',{method:'POST',data:{...data,_watch_event_id:requestId}});
     if(version!==checkEpoch||!$('#ckd-pair-form'))return;
     current={data,requestId};$('#ckd-samsung').value=data.samsung;$('#ckd-item').value=data.item_code;steps();
     const pencil='<svg viewBox="0 0 24 24" aria-hidden="true"><path d="m16 3 5 5-12 12-6 1 1-6Z M14 5l5 5"/></svg>';

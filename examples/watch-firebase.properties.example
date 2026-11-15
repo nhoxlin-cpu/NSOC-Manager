@@ -1,0 +1,6 @@
+# Public Firebase Android client configuration, supplied to Gradle as environment variables.
+# Do not place a service-account key, user password or watch bearer here.
+WORKAREA_FIREBASE_APP_ID=
+WORKAREA_FIREBASE_API_KEY=
+WORKAREA_FIREBASE_PROJECT_ID=
+WORKAREA_FIREBASE_SENDER_ID=

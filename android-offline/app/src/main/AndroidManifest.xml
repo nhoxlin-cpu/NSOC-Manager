@@ -5,6 +5,7 @@
  <uses-permission android:name="android.permission.VIBRATE"/>
  <uses-feature android:name="android.hardware.camera" android:required="false"/>
  <application android:label="Work Area Offline" android:icon="@drawable/ic_workarea" android:roundIcon="@drawable/ic_workarea" android:theme="@android:style/Theme.Material.Light.NoActionBar" android:usesCleartextTraffic="false" android:allowBackup="false" android:fullBackupContent="false" android:dataExtractionRules="@xml/data_extraction_rules" android:enableOnBackInvokedCallback="false" android:supportsRtl="true">
+  <service android:name=".PhoneWatchAckService" android:exported="true"><intent-filter><action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED"/><data android:scheme="wear" android:host="*" android:pathPrefix="/workarea/ack/"/></intent-filter></service>
   <activity android:name=".MainActivity" android:exported="true" android:launchMode="singleTask" android:windowSoftInputMode="adjustResize" android:configChanges="orientation|screenSize|keyboardHidden">
    <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
   </activity>

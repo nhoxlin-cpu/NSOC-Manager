@@ -1,3 +1,4 @@
+import {watchResults} from '/watch-results.js?v=20261115-46';
 import {renderHolding} from '/holding.js?v=20261115-regname1';
 import { renderCutting } from '/cutting.js?v=20261114-23';
 import { renderCkd } from '/ckd.js?v=20261115-42';
@@ -40,7 +41,8 @@ function connection(ok) {
   state.connected = ok; const el = $('#connection');
   el.classList.toggle('offline', !ok); $('span', el).textContent = ok ? 'Server đã kết nối' : 'Chưa kết nối server';
 }
-async function api(path, { method = 'GET', data, file, timeoutMs = 20000 } = {}) {
+async function api(path,options={}){let attempt;try{attempt=await watchResults.begin(path,options);}catch{}const result=await requestApi(path,options);try{await watchResults.complete(attempt,path,options,result);}catch{}return result;}
+async function requestApi(path, { method = 'GET', data, file, timeoutMs = 20000 } = {}) {
   let response;
   try { response = await fetch('/api' + path, { method, credentials: 'same-origin', headers: { ...(file ? { 'Content-Type':'application/octet-stream','X-MM-File-Name':encodeURIComponent(file.name) } : data ? { 'Content-Type': 'application/json' } : {}), ...(method !== 'GET' && state.csrf ? { 'X-CSRF-Token': state.csrf } : {}) }, body: file || (data ? JSON.stringify(data) : undefined), signal: AbortSignal.timeout(timeoutMs) }); }
   catch { connection(false); const error = new Error('Chưa kết nối được server. Vui lòng kiểm tra mạng.'); error.network = true; throw error; }
@@ -114,7 +116,9 @@ function formAction(selector, handler) {
 
 const routes = [['home', 'home', 'Trang chủ'], ['scan', 'scan', 'Quét mã'], ['ckd', 'ckd', 'Kiểm tra CKD'], ['cut', 'cut', 'Cắt chân linh kiện'], ['holding', 'box', 'Holding room'], ['mm', 'search', 'Tra cứu MM'], ['assistant', 'assistant', 'Trợ lý'], ['account', 'user', 'Tài khoản']];
 const shortLabels={home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt chân',holding:'Holding',mm:'Tra MM',assistant:'Trợ lý',account:'Tài khoản'};
+watchResults.connect((path,options)=>requestApi(path,options));
 function renderNavigation() {
+  watchResults.setAccount(state.user);
   const keys=state.user ? state.navigation : defaultNavigation;
   $('.bottom-nav').innerHTML=keys.filter(key=>routes.some(r=>r[0]===key)).map(key=>{const route=routes.find(r=>r[0]===key);return `<a href="#${key}" data-nav="${key}" aria-label="${route[2]}" ${state.page===key?'class="active" aria-current="page"':''}>${icon(route[1])}<span>${shortLabels[key]}</span></a>`;}).join('');
 }
@@ -467,12 +471,12 @@ async function renderHubSync(){
 }
 async function downloadHub(){
  document.title='Tải xuống & Sao lưu · Work Area';
- $('#main').innerHTML=pageTop('Tải xuống & Sao lưu','Ứng dụng · Đồng bộ · Khôi phục')+`<section class="panel"><h2>Ứng dụng Android</h2><p class="muted">Chọn bản phù hợp với cách làm việc.</p><div class="actions equal"><a class="button" id="download-online-apk" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} APK Online</a><a class="button primary" id="download-offline-apk" href="/downloads/WorkArea-Offline-1.0.0.apk" download>${icon('download')} APK Online + Offline</a></div><details class="mt"><summary>Hướng dẫn cài đặt</summary><p>Android 8 trở lên. Cài APK, cấp quyền camera, đăng nhập có mạng và chờ tải xong dữ liệu. Gửi hết hàng chờ trước khi đổi bản cài; không gỡ app khi còn lượt chờ.</p></details></section><section id="hub-sync"></section><section class="panel"><h2>Sao lưu & Khôi phục</h2><div id="backup-panel"></div></section><div id="hub-fresh-backup"></div>`;
+ $('#main').innerHTML=pageTop('Tải xuống & Sao lưu','Ứng dụng · Đồng bộ · Khôi phục')+`<section class="panel"><h2>Ứng dụng Android</h2><p class="muted">Chọn bản phù hợp với cách làm việc.</p><div class="actions equal"><a class="button" id="download-online-apk" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} APK Online</a><a class="button primary" id="download-offline-apk" href="/downloads/WorkArea-Offline-1.0.0.apk" download>${icon('download')} APK Online + Offline</a></div><details class="mt"><summary>Hướng dẫn cài đặt</summary><p>Android 8 trở lên. Cài APK, cấp quyền camera, đăng nhập có mạng và chờ tải xong dữ liệu. Gửi hết hàng chờ trước khi đổi bản cài; không gỡ app khi còn lượt chờ.</p></details></section><section id="hub-watch"></section><section id="hub-sync"></section><section class="panel"><h2>Sao lưu & Khôi phục</h2><div id="backup-panel"></div></section><div id="hub-fresh-backup"></div>`;
    if(state.user?.role==='admin'){
     const panel=document.createElement('section');panel.className='panel';panel.innerHTML=`<h2>Sao lưu server</h2><p class="muted">Tải mã ứng dụng, dữ liệu, tài khoản và ảnh để khôi phục trên VPS khác. Giữ file ZIP ở ngoài VPS và bảo mật file này. Hướng dẫn phục hồi nằm trong ZIP.</p><button class="button primary" id="server-backup">Tải bản sao lưu server</button><p id="server-backup-status" role="status"></p>`;$('#hub-fresh-backup').append(panel);
     $('#server-backup').onclick=async event=>{const b=event.currentTarget;b.disabled=true;$('#server-backup-status').textContent='Đang tạo bản sao lưu…';try{const response=await fetch('/api/server-backup',{method:'POST',headers:{'X-CSRF-Token':state.csrf}});if(!response.ok){const error=await response.json();throw Error(error.error);}const blob=await response.blob(),url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='WorkArea-server-backup.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),60000);$('#server-backup-status').textContent='Đã tải bản sao lưu. Giữ file ở thiết bị khác VPS.';}catch(err){$('#server-backup-status').textContent=err.message;}finally{b.disabled=false;}};
   }
- await Promise.allSettled([renderHubSync(),renderHubBackup()]);
+ await Promise.allSettled([renderHubSync(),renderHubBackup(),watchResults.render('#hub-watch')]);
 }
 async function renderHubBackup(){
  const panel=$('#backup-panel');if(!panel)return;
