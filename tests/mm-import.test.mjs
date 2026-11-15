@@ -62,3 +62,5 @@ test('import retains separate barcode rows for one ITEM, updates by barcode and 
     assert.equal(db.prepare('SELECT COUNT(DISTINCT source_sheet) n FROM mm_inventory').get().n,3);
   }finally{db.close();}
 });
+
+test('MM Marker heading maps to maker separately from BP_NM vendor',()=>{const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([headers.map(h=>h==='MAKER'?'MARKER':h),row('MARKER-TEST')]),'MM');const parsed=parseMMWorkbook(XLSX.write(wb,{type:'buffer',bookType:'xlsx'}));assert.equal(parsed.rows[0].maker,'Maker');assert.equal(parsed.rows[0].vendor,'Vendor');});

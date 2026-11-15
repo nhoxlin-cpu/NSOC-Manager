@@ -445,8 +445,9 @@ test('Holding ITEM MM lookup matches exact ITEM or barcode and preserves distinc
  const batch=Number(db.prepare("INSERT INTO mm_imports(name,sheets,row_count) VALUES('lookup','[]',2)").run().lastInsertRowid);
  const add=db.prepare('INSERT INTO mm_inventory(barcode,item_code,item_name,qty,vendor,lot_no,source_sheet,source_row,import_id) VALUES(?,?,?,?,?,?,?,?,?)');
  add.run('LOOKUP-LOT-A','LOOKUP-ITEM','Name A',1,'Vendor A','Lot A','MM',1,batch);add.run('LOOKUP-LOT-B','LOOKUP-ITEM','Name B',2,'Vendor B','Lot B','MM',2,batch);
+ db.prepare("UPDATE mm_inventory SET maker='Maker B' WHERE barcode='LOOKUP-LOT-B'").run();
  let r=await request('/api/holding/v2/item-mm?code=lookup-item',viewer);assert.equal(r.status,200);assert.equal(r.data.rows.length,2);
- r=await request('/api/holding/v2/item-mm?code=LOOKUP-LOT-B',inspector);assert.equal(r.data.rows.length,1);assert.equal(r.data.rows[0].lot_no,'Lot B');assert.equal(r.data.rows[0].vendor,'Vendor B');assert.equal(r.data.rows[0].item_name,'Name B');
+ r=await request('/api/holding/v2/item-mm?code=LOOKUP-LOT-B',inspector);assert.equal(r.data.rows.length,1);assert.equal(r.data.rows[0].lot_no,'Lot B');assert.equal(r.data.rows[0].vendor,'Maker B');assert.equal(r.data.rows[0].item_name,'Name B');
  assert.equal((await request('/api/holding/v2/item-mm?code=LOOKUP',viewer)).data.rows.length,0);
 });
 
@@ -456,7 +457,8 @@ test('Holding ITEM name comes from saved code directory even after current MM lo
  db.prepare("INSERT INTO mm_code_registry(item_code,item_name,spec,vendor) VALUES('PERSIST-NAME','Saved component','Spec','Old vendor')").run();
  let r=await request('/api/holding/v2/item-mm?code=persist-name',inspector);assert.equal(r.status,200);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].name_source,'code_directory');assert(!Object.hasOwn(r.data.rows[0],'vendor'));assert(!Object.hasOwn(r.data.rows[0],'lot_no'));
  const batch=Number(db.prepare("INSERT INTO mm_imports(name,sheets,row_count) VALUES('Name test','[]',1)").run().lastInsertRowid);db.prepare('INSERT INTO mm_inventory(barcode,item_code,item_name,qty,vendor,lot_no,source_sheet,source_row,import_id) VALUES(?,?,?,?,?,?,?,?,?)').run('PERSIST-BARCODE','PERSIST-NAME','Current name',1,'Current vendor','Current lot','MM',1,batch);
- r=await request('/api/holding/v2/item-mm?code=PERSIST-BARCODE',inspector);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].vendor,'Current vendor');
+ db.prepare("UPDATE mm_inventory SET maker='Current maker' WHERE barcode='PERSIST-BARCODE'").run();
+ r=await request('/api/holding/v2/item-mm?code=PERSIST-BARCODE',inspector);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].vendor,'Current maker');
 });
 
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
