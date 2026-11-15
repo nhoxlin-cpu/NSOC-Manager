@@ -452,6 +452,13 @@ test('Holding ITEM MM lookup matches exact ITEM or barcode and preserves distinc
 
 test('MM code directory requires login and supports viewers without writing lookup history',async()=>{assert.equal((await request('/api/materials/codes')).status,401);const before=db.prepare('SELECT COUNT(*) n FROM mm_lookup_saved').get().n;const r=await request('/api/materials/codes?q=ITEM',viewer);assert.equal(r.status,200);assert(Array.isArray(r.data.rows));assert.equal((await request('/api/materials/codes?offset=-1',viewer)).status,400);assert.equal(db.prepare('SELECT COUNT(*) n FROM mm_lookup_saved').get().n,before);});
 
+test('Holding ITEM name comes from saved code directory even after current MM loses that code',async()=>{
+ db.prepare("INSERT INTO mm_code_registry(item_code,item_name,spec,vendor) VALUES('PERSIST-NAME','Saved component','Spec','Old vendor')").run();
+ let r=await request('/api/holding/v2/item-mm?code=persist-name',inspector);assert.equal(r.status,200);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].name_source,'code_directory');assert(!Object.hasOwn(r.data.rows[0],'vendor'));assert(!Object.hasOwn(r.data.rows[0],'lot_no'));
+ const batch=Number(db.prepare("INSERT INTO mm_imports(name,sheets,row_count) VALUES('Name test','[]',1)").run().lastInsertRowid);db.prepare('INSERT INTO mm_inventory(barcode,item_code,item_name,qty,vendor,lot_no,source_sheet,source_row,import_id) VALUES(?,?,?,?,?,?,?,?,?)').run('PERSIST-BARCODE','PERSIST-NAME','Current name',1,'Current vendor','Current lot','MM',1,batch);
+ r=await request('/api/holding/v2/item-mm?code=PERSIST-BARCODE',inspector);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].vendor,'Current vendor');
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);

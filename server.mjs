@@ -161,10 +161,13 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(req.method==='POST'&&action==='delete'){adminAccess(u);return send(res,200,deleteHolding(db,await jsonBody(req),u.id));}
         if(req.method==='GET'&&action==='item-mm'){
           const code=text(query.code,'ITEM',200).toUpperCase();
-          let rows=db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE barcode=? ORDER BY barcode LIMIT 201').all(code);
+          const savedCode=db.prepare('SELECT item_code,item_name FROM mm_code_registry WHERE item_code=?').get(code);
+          let rows=savedCode?db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(savedCode.item_code):db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE barcode=? ORDER BY barcode LIMIT 201').all(code);
           if(!rows.length)rows=db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(code);
-          if(rows.length>200)fail(400,'ITEM has more than 200 MM rows. Scan the exact MM barcode.');
+          if(rows.length>200&&!savedCode)fail(400,'ITEM has more than 200 MM rows. Scan the exact MM barcode.');
           if(!rows.length)rows=db.prepare("SELECT m.samsung AS barcode,m.item_code,m.item AS item_name,m.vendor,COALESCE(st.lot_no,'') lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE m.item_code=? OR m.samsung=?").all(code,code);
+          if(savedCode&&!rows.length)rows=[savedCode];
+          rows=rows.map(row=>{const saved=savedCode||db.prepare('SELECT item_name FROM mm_code_registry WHERE item_code=?').get(row.item_code);return saved?{...row,item_name:saved.item_name,name_source:'code_directory'}:row;});
           return send(res,200,{rows});
         }
         if(req.method==='GET'&&action==='reference')return send(res,200,holdingReference(db));
