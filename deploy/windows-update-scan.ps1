@@ -7,8 +7,8 @@ if ($root -ne 'C:\apps\work-area') {throw 'Wrong Work Area deployment directory.
 $private=Join-Path $root 'private'
 $stage=Join-Path $private 'scan-update-stage'
 $manifest=Get-Content -LiteralPath (Join-Path $stage 'manifest.json') -Raw -Encoding UTF8 | ConvertFrom-Json
-$allowed=@('server.mjs','public/app.js','public/ckd.js','public/ckd-code.js','public/scanner.js','lib/ckd.mjs','lib/offline-business.mjs','public/downloads/WorkArea-Offline-1.0.0.apk')
-if ($manifest.build -ne 'ckd-auto-20261115-41' -or $manifest.files.Count -ne $allowed.Count) {throw 'Unexpected CKD update manifest.'}
+$allowed=@('server.mjs','public/app.js','public/ckd.js','public/downloads/WorkArea-Offline-1.0.0.apk')
+if ($manifest.build -ne 'ckd-flow-20261115-42' -or $manifest.files.Count -ne $allowed.Count) {throw 'Unexpected CKD update manifest.'}
 foreach ($directory in @($root,$private,$stage)) {
     if ((Get-Item -LiteralPath $directory -Force).Attributes -band [IO.FileAttributes]::ReparsePoint) {throw 'Reparse deployment directory refused.'}
 }

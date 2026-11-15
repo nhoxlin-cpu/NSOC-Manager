@@ -108,7 +108,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
-      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-auto-20261115-41' });
+      if (req.method === 'GET' && path === '/api/health') return send(res, 200, { ok: true, app: 'work-area',build:'ckd-flow-20261115-42' });
       if (!['GET', 'POST', 'DELETE'].includes(req.method)) fail(405, 'Phương thức không được hỗ trợ.');
       const mutating = req.method !== 'GET';
       if (mutating && req.headers.origin) {

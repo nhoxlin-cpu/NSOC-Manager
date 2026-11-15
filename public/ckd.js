@@ -145,10 +145,10 @@ export async function renderCkd(ctx){
       // Clear the held result too: the next deliberate read may be the same code.
       camera.lastCode='';camera.lastRead='';
     }
-    camera=new PhoneScanner($('#camera-dialog'),{title:$('#ckd-samsung').value?'CKD · 2/2 Quét ITEM':'CKD · 1/2 Quét Samsung',accountKey:'u'+owner,continuous:state.continuousScan,onContinuousChange:setContinuousScan,acceptCode:code=>Boolean(ckdCode(code)),selectCode:values=>{const codes=values.map(ckdCode).filter(Boolean);return (codes.find(c=>!input(c.slot).value.trim())||codes[0])?.code||'';},
+    camera=new PhoneScanner($('#camera-dialog'),{title:$('#ckd-samsung').value?'CKD · 2/2 Quét ITEM':'CKD · 1/2 Quét Samsung',accountKey:'u'+owner,continuous:true,hideContinuous:true,acceptCode:code=>{const c=ckdCode(code);return Boolean(c&&!input(c.slot).value.trim());},selectCode:values=>values.map(ckdCode).find(c=>c&&!input(c.slot).value.trim())?.code||'',
       onCode:async code=>{
         if(!$('#ckd-pair-form'))throw Error('Màn hình đã thay đổi.');
-        const detected=ckdCode(code);if(!detected)return;target=detected.slot;code=detected.code;
+        const detected=ckdCode(code);if(!detected||input(detected.slot).value.trim())return;target=detected.slot;code=detected.code;
         if(state.autoCapture){const video=camera.video;if(!video?.videoWidth||video.readyState<2)throw Error('Chưa chụp được ảnh. Giữ mã trong khung rồi quét lại.');const canvas=document.createElement('canvas'),scale=Math.min(1,960/video.videoWidth);canvas.width=Math.round(video.videoWidth*scale);canvas.height=Math.round(video.videoHeight*scale);canvas.getContext('2d').drawImage(video,0,0,canvas.width,canvas.height);const thumb=document.createElement('canvas');thumb.width=128;thumb.height=Math.max(1,Math.round(canvas.height*128/canvas.width));thumb.getContext('2d').drawImage(canvas,0,0,thumb.width,thumb.height);images[target]={source:canvas.toDataURL('image/jpeg',.75),thumbnail:thumb.toDataURL('image/jpeg',.65)};}else delete images[target];
         input(target).value=code;steps();target=!$('#ckd-samsung').value.trim()?'samsung':'item';pairUI();
         if(!$('#ckd-samsung').value.trim()||!$('#ckd-item').value.trim())return {message:target==='item'?'Đã nhận Samsung. Tiếp tục quét ITEM trên box.':'Đã nhận ITEM. Tiếp tục quét Samsung.'};
@@ -156,6 +156,7 @@ export async function renderCkd(ctx){
       },onManual:()=>{manual.open=true;$('#ckd-samsung').value?$('#ckd-item').focus():$('#ckd-samsung').focus();},onAuthExpired:()=>{camera?.close();location.hash='#account';}
     });
     $('#camera-dialog').classList.add('ckd-camera');
+    for(const selector of ['#scanner-count','.scanner-result-actions','#scanner-continuous'])$(selector).style.display='none';
     $('#scanner-result').insertAdjacentHTML('beforebegin',`<div class="ckd-camera-pair">${[['samsung','Samsung'],['item','ITEM']].map(([slot,label])=>`<div class="ckd-camera-slot" id="ckd-camera-${slot}"><button type="button" class="ckd-camera-select" data-slot="${slot}" aria-label="Quét vào ô ${label}"><span class="ckd-camera-label">${label}</span><span class="ckd-camera-code">Chưa quét</span></button><button type="button" class="ckd-camera-clear" data-clear-slot="${slot}" aria-label="Xóa mã ${label}" hidden>×</button></div>`).join('')}</div>`);
     document.querySelectorAll('[data-slot]').forEach(b=>b.onclick=()=>choose(b.dataset.slot));
     document.querySelectorAll('[data-clear-slot]').forEach(b=>b.onclick=()=>choose(b.dataset.clearSlot,true));

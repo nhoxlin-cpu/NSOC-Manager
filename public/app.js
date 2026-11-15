@@ -1,6 +1,6 @@
 import {renderHolding} from '/holding.js?v=20261115-regname1';
 import { renderCutting } from '/cutting.js?v=20261114-23';
-import { renderCkd } from '/ckd.js?v=20261115-41';
+import { renderCkd } from '/ckd.js?v=20261115-42';
 import { PhoneScanner, zxing } from '/scanner.js?v=20261115-41';
 const $ = (s, root = document) => root.querySelector(s);
 const escape = value => String(value ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
