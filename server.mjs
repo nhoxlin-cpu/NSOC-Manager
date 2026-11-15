@@ -162,10 +162,10 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(req.method==='GET'&&action==='item-mm'){
           const code=text(query.code,'ITEM',200).toUpperCase();
           const savedCode=db.prepare('SELECT item_code,item_name FROM mm_code_registry WHERE item_code=?').get(code);
-          let rows=savedCode?db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(savedCode.item_code):db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE barcode=? ORDER BY barcode LIMIT 201').all(code);
-          if(!rows.length)rows=db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(code);
+          let rows=savedCode?db.prepare('SELECT barcode,item_code,item_name,maker AS vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(savedCode.item_code):db.prepare('SELECT barcode,item_code,item_name,maker AS vendor,lot_no FROM mm_inventory WHERE barcode=? ORDER BY barcode LIMIT 201').all(code);
+          if(!rows.length)rows=db.prepare('SELECT barcode,item_code,item_name,maker AS vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(code);
           if(rows.length>200&&!savedCode)fail(400,'ITEM has more than 200 MM rows. Scan the exact MM barcode.');
-          if(!rows.length)rows=db.prepare("SELECT m.samsung AS barcode,m.item_code,m.item AS item_name,m.vendor,COALESCE(st.lot_no,'') lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE m.item_code=? OR m.samsung=?").all(code,code);
+          if(!rows.length)rows=db.prepare("SELECT m.samsung AS barcode,m.item_code,m.item AS item_name,m.maker AS vendor,COALESCE(st.lot_no,'') lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE m.item_code=? OR m.samsung=?").all(code,code);
           if(savedCode&&!rows.length)rows=[savedCode];
           rows=rows.map(row=>{const saved=savedCode||db.prepare('SELECT item_name FROM mm_code_registry WHERE item_code=?').get(row.item_code);return saved?{...row,item_name:saved.item_name,name_source:'code_directory'}:row;});
           return send(res,200,{rows});
@@ -327,7 +327,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if (typeof b.csv !== 'string' || b.csv.length > 2_000_000) fail(400, 'CSV tối đa 2 MB.');
         let rows;
         try { rows = parseCSV(b.csv); } catch (e) { fail(400, e.message); }
-        const aliases={item_nm:'item',item_name:'item',mark:'maker',barcode:'samsung',spec:'description'};
+        const aliases={item_nm:'item',item_name:'item',mark:'maker',marker:'maker',barcode:'samsung',spec:'description'};
         const headers = rows.shift()?.map(value=>{const key=value.trim().toLowerCase().replace(/\s+/g,'_');return aliases[key]||key;});
         const keys = ['item_code', 'samsung', 'item', 'description', 'maker', 'vendor', 'location', 'selling_qty', 'moq'];
         if (!headers || new Set(headers).size!==headers.length || keys.some(k => !headers.includes(k)) || headers.some(k=>![...keys,'qty','lot_no'].includes(k))) fail(400, `Cột CSV cần đủ và không trùng: ${keys.join(', ')}; có thể thêm qty, lot_no.`);
