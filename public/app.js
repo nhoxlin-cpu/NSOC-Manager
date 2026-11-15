@@ -122,7 +122,7 @@ function renderNavigation() {
 $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="backup-menu-link" href="#backup" hidden>${icon('download')} Sao lưu máy chủ</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
-$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} T?i APK t? server</a>`);
+$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="/downloads/WorkArea-Android-1.0.0.apk" download>${icon('download')} Tải APK Online</a><a class="menu-link" href="#offline-app">${icon('download')} APK Online + Offline</a>`);
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = () => el.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(el => el.addEventListener('click', e => { if (e.target === el) { const r = el.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) el.close(); } }));
@@ -451,6 +451,10 @@ async function cutting() {
   });
 }
 
+function offlineAppPage(){
+ document.title='APK Online + Offline · Work Area';
+ $('#main').innerHTML=pageTop('Work Area Offline','APK Android · Online + Offline')+`<section class="panel"><span class="badge green">Phiên bản 1.0.0</span><h2 class="mt">Làm việc khi mất kết nối</h2><p>Quét HS / Stock / Label, tra MM, kiểm tra CKD, nhập / xuất / sửa Holding và cắt chân linh kiện bằng dữ liệu đã tải về máy.</p><a class="button primary full mt" id="download-offline-apk" href="/downloads/WorkArea-Offline-1.0.0.apk" download>${icon('download')} Tải APK Online + Offline</a><ol><li>Cài APK và mở <strong>Work Area Offline</strong>. Cho phép dùng camera.</li><li>Lần đầu, đăng nhập khi có mạng và chờ tải xong dữ liệu offline.</li><li>Khi mất mạng hoặc server lỗi, tiếp tục làm việc. Dữ liệu mới giữ trong hàng chờ trên điện thoại.</li><li>Mở app khi có mạng để tự gửi lại. Vào <strong>Online & Offline · Đồng bộ</strong> để xem trạng thái, cập nhật dữ liệu và xử lý lượt bị báo lỗi.</li></ol><p class="notice warning">Số lượng và tồn kho khi offline là tạm tính đến khi server xác nhận. Không xóa dữ liệu hoặc gỡ app khi còn hàng chờ.</p><p class="muted">Android 8 trở lên, cập nhật Android System WebView. Nhập file và quản lý tài khoản cần mạng. Trước khi chuyển từ APK cũ, gửi hết hàng chờ trong app cũ.</p></section>`;
+}
 async function backup(){
   if(!state.user){$('#main').innerHTML=needsLogin('Sao lưu máy chủ');return;}
   if(state.user.role!=='admin'){$('#main').innerHTML=pageTop('Sao lưu máy chủ','')+'<section class="panel">Chỉ tài khoản quản trị được tải bản sao lưu.</section>';return;}
@@ -464,7 +468,7 @@ async function render() {
   const id = ++renderId; const page = location.hash.slice(1).split('?')[0] || 'home'; state.page = page;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup }[page];
+  const route = { home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage }[page];
   document.title = `${routes.find(r => r[0] === page)?.[2] || 'Trang chủ'} · Work Area`;
   try { await (route || home)(id); } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }
