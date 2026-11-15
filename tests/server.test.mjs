@@ -440,6 +440,16 @@ test('server recovery and Holding removal require admin and valid CSRF',async()=
  const r=await fetch(base+'/api/server-backup',{method:'POST',headers:{Cookie:admin.cookie,'X-CSRF-Token':admin.csrf}});assert.equal(r.status,200);assert.match(r.headers.get('content-disposition'),/attachment/);assert.equal(Buffer.from(await r.arrayBuffer()).subarray(0,4).toString('hex'),'504b0304');
 });
 
+test('Holding ITEM MM lookup matches exact ITEM or barcode and preserves distinct lot choices',async()=>{
+ assert.equal((await request('/api/holding/v2/item-mm?code=X')).status,401);
+ const batch=Number(db.prepare("INSERT INTO mm_imports(name,sheets,row_count) VALUES('lookup','[]',2)").run().lastInsertRowid);
+ const add=db.prepare('INSERT INTO mm_inventory(barcode,item_code,item_name,qty,vendor,lot_no,source_sheet,source_row,import_id) VALUES(?,?,?,?,?,?,?,?,?)');
+ add.run('LOOKUP-LOT-A','LOOKUP-ITEM','Name A',1,'Vendor A','Lot A','MM',1,batch);add.run('LOOKUP-LOT-B','LOOKUP-ITEM','Name B',2,'Vendor B','Lot B','MM',2,batch);
+ let r=await request('/api/holding/v2/item-mm?code=lookup-item',viewer);assert.equal(r.status,200);assert.equal(r.data.rows.length,2);
+ r=await request('/api/holding/v2/item-mm?code=LOOKUP-LOT-B',inspector);assert.equal(r.data.rows.length,1);assert.equal(r.data.rows[0].lot_no,'Lot B');assert.equal(r.data.rows[0].vendor,'Vendor B');assert.equal(r.data.rows[0].item_name,'Name B');
+ assert.equal((await request('/api/holding/v2/item-mm?code=LOOKUP',viewer)).data.rows.length,0);
+});
+
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {
   const old = await login('viewer');
   assert.equal((await request('/api/password',viewer,'POST',{ oldPassword:password,password:'another-test-password-2026' })).status,200);

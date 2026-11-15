@@ -149,6 +149,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const action=path.slice('/api/holding/v2/'.length),query=Object.fromEntries(url.searchParams);
         if(req.method==='GET'&&action==='delete-preview'){adminAccess(u);const rows=db.prepare('SELECT id,revision AS expected_revision FROM holding_entries WHERE remaining_qty>0 ORDER BY id LIMIT 10001').all();if(rows.length>10000)fail(400,'T? c? h?n 10.000 box, h?y x?a theo t?ng box.');return send(res,200,{rows});}
         if(req.method==='POST'&&action==='delete'){adminAccess(u);return send(res,200,deleteHolding(db,await jsonBody(req),u.id));}
+        if(req.method==='GET'&&action==='item-mm'){
+          const code=text(query.code,'ITEM',200).toUpperCase();
+          let rows=db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE barcode=? ORDER BY barcode LIMIT 201').all(code);
+          if(!rows.length)rows=db.prepare('SELECT barcode,item_code,item_name,vendor,lot_no FROM mm_inventory WHERE item_code=? ORDER BY barcode LIMIT 201').all(code);
+          if(rows.length>200)fail(400,'ITEM has more than 200 MM rows. Scan the exact MM barcode.');
+          if(!rows.length)rows=db.prepare("SELECT m.samsung AS barcode,m.item_code,m.item AS item_name,m.vendor,COALESCE(st.lot_no,'') lot_no FROM materials m LEFT JOIN material_stock st ON st.item_code=m.item_code WHERE m.item_code=? OR m.samsung=?").all(code,code);
+          return send(res,200,{rows});
+        }
         if(req.method==='GET'&&action==='reference')return send(res,200,holdingReference(db));
         if(req.method==='GET'&&action==='lookup')return send(res,200,holdingLookup(db,query.barcode));
         if(req.method==='GET'&&action==='preferences')return send(res,200,holdingPreferences(db,u.id));
