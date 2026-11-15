@@ -20,16 +20,16 @@ export async function renderHolding(ctx){
    const formLive=()=>live()&&form.isConnected&&dialog.open;
    function fillMM(row){if(!row)return;itemInput.value=row.item_code;$('#he-name').value=row.item_name||'';$('#he-vendor').value=row.vendor||'';$('#he-lot').value=row.lot_no||'';}
    async function lookupItem(code){
-     const version=++mmVersion;$('#he-mm-choice').hidden=true;$('#he-mm-status').textContent='\u0110ang tra MM\u2026';
+     const version=++mmVersion;$('#he-save').disabled=true;$('#he-mm-choice').hidden=true;$('#he-mm-status').textContent='\u0110ang tra MM\u2026';
      try{const result=await api('/holding/v2/item-mm?code='+encodeURIComponent(code.trim()));if(!formLive()||version!==mmVersion)return;
-       mmRows=result.rows;const choice=$('#he-mm-choice');
+       mmRows=result.rows;$('#he-save').disabled=mmRows.length>1;const choice=$('#he-mm-choice');
        if(mmRows.length===1){fillMM(mmRows[0]);$('#he-mm-status').textContent='\u0110\u00e3 l\u1ea5y t\u00ean, Vendor v\u00e0 Lot No t\u1eeb MM.';}
        else if(mmRows.length){choice.innerHTML='<option value="">Ch\u1ecdn \u0111\u00fang l\u00f4 trong MM</option>'+mmRows.map((r,i)=>`<option value="${i}">${e(r.barcode)} \u00b7 ${e(r.vendor)} \u00b7 Lot ${e(r.lot_no||'\u2014')}</option>`).join('');choice.hidden=false;$('#he-mm-status').textContent='ITEM c\u00f3 nhi\u1ec1u d\u00f2ng MM. Ch\u1ecdn \u0111\u00fang l\u00f4.';}
        else $('#he-mm-status').textContent='Kh\u00f4ng t\u00ecm th\u1ea5y trong MM. Nh\u1eadp th\u00f4ng tin b\u1eb1ng tay.';
-     }catch(err){if(formLive()&&version===mmVersion)$('#he-mm-status').textContent=err.message;}
+     }catch(err){if(formLive()&&version===mmVersion){$('#he-save').disabled=false;$('#he-mm-status').textContent=err.message;}}
    }
-   $('#he-mm-choice').onchange=event=>{if(event.target.value!=='')fillMM(mmRows[Number(event.target.value)]);};
-   itemInput.oninput=()=>{mmVersion++;$('#he-mm-choice').hidden=true;$('#he-mm-status').textContent='';};
+   $('#he-mm-choice').onchange=event=>{$('#he-save').disabled=event.target.value==='';if(event.target.value!=='')fillMM(mmRows[Number(event.target.value)]);};
+   itemInput.oninput=()=>{mmVersion++;$('#he-save').disabled=false;$('#he-mm-choice').hidden=true;$('#he-mm-status').textContent='';};
    itemInput.onchange=()=>{if(itemInput.value.trim())lookupItem(itemInput.value);};
    itemInput.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();lookupItem(itemInput.value);}};
    $('#he-item-mm').onclick=()=>lookupItem(itemInput.value);
