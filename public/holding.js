@@ -15,6 +15,26 @@ export async function renderHolding(ctx){
  function editEntry(data,matches=[]){return new Promise(resolve=>{
    detail(data.item_code?'Kiểm tra nhập Holding':'Nhập thông tin box',`<form id="h-edit"><div class="field"><label for="he-barcode">Barcode-no</label><input id="he-barcode" name="barcode" value="${e(data.barcode||'')}" maxlength="200" required ${matches.length?'readonly':''}></div>${matches.length>1?`<div class="field"><label for="he-ref">Chọn nguồn</label><select id="he-ref">${matches.map((r,i)=>`<option value="${i}">${e(r.kind)} · ${e(r.item_code)} · QTY ${n(r.qty)}</option>`).join('')}</select></div>`:''}<div class="field-row"><div class="field"><label for="he-item">ITEM code</label><input id="he-item" name="item_code" value="${e(data.item_code||'')}" maxlength="200" required></div><div class="field"><label for="he-name">Tên hàng</label><input id="he-name" name="item_name" value="${e(data.item_name||'')}" maxlength="200"></div></div><div class="field-row"><div class="field"><label for="he-location">Location</label><input id="he-location" name="location" value="${e(data.location||$('#h-location').value)}" maxlength="200" required></div><div class="field"><label for="he-qty">QTY</label><input id="he-qty" name="qty" type="number" value="${e(data.qty??'')}" min="0.000001" max="1000000000" step="any" inputmode="decimal" required></div></div><div class="field-row"><div class="field"><label for="he-vendor">Vendor</label><input id="he-vendor" name="vendor" value="${e(data.vendor||'')}" maxlength="200" required></div><div class="field"><label for="he-lot">Lot No</label><input id="he-lot" name="lot_no" value="${e(data.lot_no||'')}" maxlength="200"></div></div><p class="muted">${matches.length?'Có trong file Stock 32':'Không có trong file · Nhập tay'}</p><div class="actions equal">${button('Bỏ qua','he-cancel') }<button type="submit" class="button primary" id="he-save">Lưu vào tủ</button></div></form>`);
    const dialog=$('#detail-dialog');let value=null,batch=data.batch_id;
+   const form=$('#h-edit'),itemInput=$('#he-item');let mmVersion=0,mmRows=[];
+   itemInput.insertAdjacentHTML('afterend',`<div class="actions mt"><button type="button" class="button small" id="he-item-camera">${ctx.icon('camera')} Qu\u00e9t ITEM</button><button type="button" class="button small" id="he-item-mm">Tra MM</button></div><p class="muted" id="he-mm-status" role="status"></p><select id="he-mm-choice" aria-label="Ch\u1ecdn d\u00f2ng MM" hidden></select>`);
+   const formLive=()=>live()&&form.isConnected&&dialog.open;
+   function fillMM(row){if(!row)return;itemInput.value=row.item_code;$('#he-name').value=row.item_name||'';$('#he-vendor').value=row.vendor||'';$('#he-lot').value=row.lot_no||'';}
+   async function lookupItem(code){
+     const version=++mmVersion;$('#he-save').disabled=true;$('#he-mm-choice').hidden=true;$('#he-mm-status').textContent='\u0110ang tra MM\u2026';
+     try{const result=await api('/holding/v2/item-mm?code='+encodeURIComponent(code.trim()));if(!formLive()||version!==mmVersion)return;
+       mmRows=result.rows;$('#he-save').disabled=mmRows.length>1;const choice=$('#he-mm-choice');
+       if(mmRows.length===1){fillMM(mmRows[0]);$('#he-mm-status').textContent='\u0110\u00e3 l\u1ea5y t\u00ean, Vendor v\u00e0 Lot No t\u1eeb MM.';}
+       else if(mmRows.length){choice.innerHTML='<option value="">Ch\u1ecdn \u0111\u00fang l\u00f4 trong MM</option>'+mmRows.map((r,i)=>`<option value="${i}">${e(r.barcode)} \u00b7 ${e(r.vendor)} \u00b7 Lot ${e(r.lot_no||'\u2014')}</option>`).join('');choice.hidden=false;$('#he-mm-status').textContent='ITEM c\u00f3 nhi\u1ec1u d\u00f2ng MM. Ch\u1ecdn \u0111\u00fang l\u00f4.';}
+       else $('#he-mm-status').textContent='Kh\u00f4ng t\u00ecm th\u1ea5y trong MM. Nh\u1eadp th\u00f4ng tin b\u1eb1ng tay.';
+     }catch(err){if(formLive()&&version===mmVersion){$('#he-save').disabled=false;$('#he-mm-status').textContent=err.message;}}
+   }
+   $('#he-mm-choice').onchange=event=>{$('#he-save').disabled=event.target.value==='';if(event.target.value!=='')fillMM(mmRows[Number(event.target.value)]);};
+   itemInput.oninput=()=>{mmVersion++;$('#he-save').disabled=false;$('#he-mm-choice').hidden=true;$('#he-mm-status').textContent='';};
+   itemInput.onchange=()=>{if(itemInput.value.trim())lookupItem(itemInput.value);};
+   itemInput.onkeydown=event=>{if(event.key==='Enter'){event.preventDefault();lookupItem(itemInput.value);}};
+   $('#he-item-mm').onclick=()=>lookupItem(itemInput.value);
+   $('#he-item-camera').onclick=()=>{const reader=openScanner({title:'Holding \u00b7 ITEM code',continuous:false,hideContinuous:true,autoCapture:false,onCode:async code=>{if(!formLive())return;itemInput.value=code;reader.close();await lookupItem(code);return {message:'\u0110\u00e3 \u0111\u1ecdc ITEM'};}});};
+
    const close=()=>{dialog.removeEventListener('close',close);resolve(value);};dialog.addEventListener('close',close);
    $('#he-cancel').type='button';$('#he-cancel').onclick=()=>dialog.close();
    if($('#he-ref'))$('#he-ref').onchange=event=>{const r=matches[Number(event.target.value)];batch=r.batch_id;for(const [id,key] of [['item','item_code'],['name','item_name'],['qty','qty'],['vendor','vendor'],['lot','lot_no']])$('#he-'+id).value=r[key]??'';};
