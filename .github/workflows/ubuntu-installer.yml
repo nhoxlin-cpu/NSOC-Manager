@@ -1,0 +1,48 @@
+name: Ubuntu recovery installer
+on:
+  push:
+    paths: ['deploy/ubuntu/**', '.github/workflows/ubuntu-installer.yml']
+  pull_request:
+    paths: ['deploy/ubuntu/**', '.github/workflows/ubuntu-installer.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  restore:
+    strategy:
+      matrix:
+        os: [ubuntu-22.04, ubuntu-24.04]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - name: Validate installer
+        run: |
+          bash -n deploy/ubuntu/install.sh
+          python3 -m py_compile deploy/ubuntu/verify-extract.py
+      - name: Build synthetic recovery (no production data)
+        run: node deploy/ubuntu/test-fixture.mjs "$RUNNER_TEMP/recovery.zip"
+      - name: Install onto fresh Ubuntu runner with HTTPS
+        run: sudo bash deploy/ubuntu/install.sh --domain localhost --backup "$RUNNER_TEMP/recovery.zip"
+      - name: Verify restored application and restart persistence
+        run: |
+          node deploy/ubuntu/test-smoke.mjs
+          sudo systemctl restart work-area
+          for i in $(seq 1 60); do curl -fsS http://127.0.0.1:3000/api/health && break || sleep 1; done
+          node deploy/ubuntu/test-smoke.mjs
+          sudo caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile
+          for i in $(seq 1 60); do curl -kfsS https://localhost/api/health && break || sleep 1; done
+          curl -kfsS https://localhost/api/health
+      - name: Refuse overwriting an installed server
+        run: |
+          before=$(sudo sha256sum /var/lib/work-area/work-area.sqlite)
+          if sudo bash deploy/ubuntu/install.sh --domain localhost --backup "$RUNNER_TEMP/recovery.zip"; then exit 1; fi
+          after=$(sudo sha256sum /var/lib/work-area/work-area.sqlite)
+          test "$before" = "$after"
+      - name: Diagnostics on failure
+        if: failure()
+        run: |
+          sudo journalctl -u work-area -u caddy -n 80 --no-pager
