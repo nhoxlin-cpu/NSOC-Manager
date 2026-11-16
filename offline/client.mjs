@@ -50,11 +50,16 @@ class OfflineClient{
    if(this.meta.profile&&!this.meta.active)return {user:null,csrf:null,needsSetup:false};
    const value=await network();if(value.user){this.meta.profile=value.user;this.meta.active=true;this.csrf=value.csrf;await this.persist();}return value;
   }
-  if(!this.db||!this.meta.active||this.replayError){if(!navigator.onLine||this.replayError)fail(this.notice||'Đăng nhập và tải dữ liệu offline trước khi làm việc.',503);return network();}
+  if(!this.db||!this.meta.active||this.replayError){if(path==='/scans'&&options.data?.mode==='HS')fail('Cần đăng nhập và tải lịch sử về điện thoại trước khi so trùng HS trên máy.',503);if(!navigator.onLine||this.replayError)fail(this.notice||'Đăng nhập và tải dữ liệu offline trước khi làm việc.',503);return network();}
   if(method==='DELETE'&&/^\/scans\/\d+$/.test(path)){const id=Number(path.split('/').at(-1)),row=this.db.prepare('SELECT mode FROM scans WHERE id=?').get(id);if(!row)fail('Không còn lượt quét.',404);path='/scans/delete';options={method:'POST',data:{mode:row.mode,ids:[id]}};}
   const verb=options.method||'GET';
   if(verb==='POST'&&queuePaths.has(path)){
    const committed=await this.serial(()=>this.commit(path,options.data||{}));if(!committed.op)return committed.result;
+   if(path==='/scans'&&options.data?.mode==='HS'){
+    // A durable device comparison is final for HS. Network receipts cannot replace it.
+    if(navigator.onLine&&this.online&&!this.conflict&&!this.syncing&&Date.now()>=this.nextAttempt)this.sync().catch(()=>{});
+    return {...committed.result,duplicate_scope:'device',offline:true};
+   }
    if(navigator.onLine&&this.online&&!this.conflict&&!this.syncing&&Date.now()>=this.nextAttempt){let timer;await Promise.race([this.sync().catch(()=>{}),new Promise(resolve=>{timer=setTimeout(resolve,1200);})]);clearTimeout(timer);}
    return {...committed.result,...(committed.op.serverResult||{}),...(committed.result.id?{id:committed.result.id}:{}),offline:!committed.op.ack};
   }
@@ -83,7 +88,7 @@ class OfflineClient{
   if(op.path==='/scans/delete'||op.path==='/ckd/history/delete'){const entity=op.path==='/scans/delete'?'scan':'ckd';b.ids=b.ids.map(id=>map(entity,id));if(b.expected)b.expected=b.expected.map(row=>({...row,id:map(entity,row.id)}));}
   return b;
  }
- applyReceipt(op){if(op.path!=='/scans'||!op.serverResult)return;const r=op.serverResult;this.db.prepare('UPDATE scans SET prior_count=? WHERE request_id=? AND user_id=?').run(r.prior_count||0,op.body.request_id,op.actor.id);if(r.stock){const s=r.stock;this.db.prepare('UPDATE scans SET quantity=? WHERE request_id=? AND user_id=?').run(s.quantity,op.body.request_id,op.actor.id);this.db.prepare('UPDATE scan_stock SET item_code=?,item_name=?,maker=?,vendor=?,lot_no=?,quantity_source=? WHERE scan_id=?').run(s.item_code,s.item_name,s.maker,s.vendor,s.lot_no,s.quantity_source,op.localResult.id);}}
+ applyReceipt(op){if(op.path!=='/scans'||!op.serverResult)return;const r=op.serverResult;if(op.body.mode!=='HS')this.db.prepare('UPDATE scans SET prior_count=? WHERE request_id=? AND user_id=?').run(r.prior_count||0,op.body.request_id,op.actor.id);if(r.stock){const s=r.stock;this.db.prepare('UPDATE scans SET quantity=? WHERE request_id=? AND user_id=?').run(s.quantity,op.body.request_id,op.actor.id);this.db.prepare('UPDATE scan_stock SET item_code=?,item_name=?,maker=?,vendor=?,lot_no=?,quantity_source=? WHERE scan_id=?').run(s.item_code,s.item_name,s.maker,s.vendor,s.lot_no,s.quantity_source,op.localResult.id);}}
  async refreshIfDue(){if(this.db&&this.meta.active&&this.online&&!this.pending().length&&!this.preparing&&!this.conflict&&!document.querySelector('#camera-dialog[open]')&&Date.now()-Date.parse(this.meta.snapshotAt||0)>15*60000)await this.prepare();}
  async sync(){
   if(this.syncing)return this.syncing;if(!this.meta.active||!this.db||this.replayError)return;

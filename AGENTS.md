@@ -1,5 +1,7 @@
 # Work Area collaboration
 
+HS duplicate decisions are device-local (HS-LOCAL.md). After durable device commit, return its local comparison immediately, never wait for sync or merge the server's count. Receipts must not overwrite HS prior_count on the phone. Do not paint a completed device HS result amber merely because upload is pending. Without a cached workspace require initialization, not a server decision. Keep other business workflows' provisional/sync rules intact.
+
 Scan Label uses the existing hsCode recognizer for its canonical ITEM key when a known 12/13-character code includes auxiliary label data. Preserve raw_barcode; canonicalize duplicate checks online/offline and pending-label comparisons. Never normalize Stock Barcode-no this way. Legacy Label migration must retain every request ID, occurrence, image and original code. Keep canonical repeated-frame suppression separate from the explicit repeat/save action. Rebuild the phone bundle and web shell when changing this rule.
 
 Phone APK updates: follow APP-UPDATES.md. Every phone version bump must update public/android-release.json to the same versionCode/versionName and deploy the signed APK and metadata coherently. Keep the same signing key; preserve the native updater's package/version/signer/hash checks, scoped FileProvider, Android user confirmation and offline-safe in-app notification. Existing pre-1.1.5 APKs need one manual update to acquire the updater.

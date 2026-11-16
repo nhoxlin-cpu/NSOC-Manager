@@ -256,7 +256,7 @@ export class PhoneScanner {
     if(raw!==this.lastRaw)this.lastImage=null;
     if(image)this.lastImage=image;
     this.lastRaw=raw;if(['HS','Label'].includes(this.options.mode))code=hsCode(raw);
-    this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
+    this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':this.options.mode==='HS'?'Đang so trùng trên máy…':'Đang kiểm tra trùng trên toàn server…',code);
     const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:this.options.mode!=='HS'&&!force};
     if(['HS','Label'].includes(this.options.mode))payload.raw_barcode=raw;
     try {
