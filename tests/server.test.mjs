@@ -429,7 +429,7 @@ test('HS canonical codes share duplicate counts while raw labels, other modes an
   assert.equal((await request('/api/scans',inspector,'POST',a)).status,200);
   const check=await request('/api/scans/check?mode=HS&barcode='+encodeURIComponent(a.barcode),viewer);assert.equal(check.data.barcode,'0837770049AA');assert.equal(check.data.count,2);
   const rows=(await request('/api/scans?mode=HS',viewer)).data.scans.filter(r=>r.barcode==='0837770049AA');assert.equal(rows.length,2);assert.equal(rows.find(r=>r.id===first.data.id).raw_barcode,a.barcode);
-  for(const mode of ['Stock','Label']){const result=await request('/api/scans',inspector,'POST',{...a,mode,request_id:randomUUID()});assert.equal(result.status,201);assert.equal(db.prepare('SELECT barcode FROM scans WHERE id=?').get(result.data.id).barcode,a.barcode);}
+  for(const mode of ['Stock','Label']){const result=await request('/api/scans',inspector,'POST',{...a,mode,request_id:randomUUID()});assert.equal(result.status,201);const stored=db.prepare('SELECT barcode,raw_barcode FROM scans WHERE id=?').get(result.data.id);assert.equal(stored.barcode,mode==='Label'?'0837770049AA':a.barcode);if(mode==='Label')assert.equal(stored.raw_barcode,a.barcode);}
 });
 
 test('server recovery and Holding removal require admin and valid CSRF',async()=>{

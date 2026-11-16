@@ -250,14 +250,15 @@ export class PhoneScanner {
     code=clean(code);const raw=code;
     if(this.options.acceptCode&&!this.options.acceptCode(code)){this.latched='';this.candidate='';return;}
     if(!force && this.options.mode==='HS' && this.lastRead===code)return;
+    if(!force && this.options.mode==='Label' && this.lastCode===hsCode(raw))return;
     this.lastRead=code;
     this.stockUI(null);
     if(raw!==this.lastRaw)this.lastImage=null;
     if(image)this.lastImage=image;
-    this.lastRaw=raw;if(this.options.mode==='HS')code=hsCode(raw);
+    this.lastRaw=raw;if(['HS','Label'].includes(this.options.mode))code=hsCode(raw);
     this.busy=true; this.lastCode=code; this.$('#scanner-repeat').disabled=true; this.paint('checking',this.options.onCode?'Đang đọc mã…':'Đang kiểm tra trùng trên toàn server…',code);
     const payload={request_id:crypto.randomUUID(),barcode:code,mode:this.options.mode,image:null,reject_duplicate:this.options.mode!=='HS'&&!force};
-    if(this.options.mode==='HS')payload.raw_barcode=raw;
+    if(['HS','Label'].includes(this.options.mode))payload.raw_barcode=raw;
     try {
       if(this.options.autoCapture && (!this.options.onCode||this.options.captureOnCode)){
         if(!this.lastImage)throw Error('Chưa chụp được ảnh đối chiếu. Hãy đưa mã vào khung và quét lại.');
@@ -267,8 +268,8 @@ export class PhoneScanner {
       let known=0, online=true;
       let local=0;
       if(this.options.mode!=='HS'){
-        local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && clean(r.barcode) === code).length;
-        try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
+        local=(await this.options.pending().catch(()=>[])).filter(r=>r.mode === this.options.mode && (this.options.mode==='Label'?hsCode(r.raw_barcode||r.barcode):clean(r.barcode)) === code).length;
+        try { const result=await this.options.api('/scans/check?barcode=' + encodeURIComponent(this.options.mode==='Label'?raw:code) + '&mode=' + encodeURIComponent(this.options.mode)); known=result.count; }
         catch(e) { if (!e.network) throw e; online=false; }
       }
       if (!this.active) return;

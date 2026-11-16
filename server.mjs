@@ -399,7 +399,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return mode;
       };
       if (req.method === 'GET' && path === '/api/scans/check') {
-        const mode=url.searchParams.get('mode'),raw=norm(text(url.searchParams.get('barcode'),'Barcode',500)),barcode=mode==='HS'?hsCode(raw):raw;
+        const mode=url.searchParams.get('mode'),raw=norm(text(url.searchParams.get('barcode'),'Barcode',500)),barcode=['HS','Label'].includes(mode)?hsCode(raw):raw;
         if (!['HS','Stock','Label'].includes(mode)) fail(400,'Loại quét không hợp lệ.');
         return send(res,200,{barcode,mode,count:scanCount(barcode,mode),scope:'server'});
       }
@@ -425,14 +425,14 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         writeAccess(u); const b = await jsonBody(req), id = requestId(b.request_id);
         const previous = db.prepare('SELECT id,user_id,barcode,mode,prior_count FROM scans WHERE request_id=?').get(id);
         if (previous) { if (previous.user_id !== u.id) fail(409, 'Mã yêu cầu đã tồn tại.'); return send(res, 200, { id: previous.id, duplicate: true,is_duplicate:previous.prior_count>0,prior_count:previous.prior_count,barcode_count:scanCount(previous.barcode,previous.mode),stock:previous.mode==='Stock'?stockInfo(previous.id):null }); }
-        const rawBarcode=norm(text(b.mode==='HS'?(b.raw_barcode??b.barcode):b.barcode,'Barcode',500)),barcode=b.mode==='HS'?hsCode(rawBarcode):rawBarcode;
+        const rawBarcode=norm(text(['HS','Label'].includes(b.mode)?(b.raw_barcode??b.barcode):b.barcode,'Barcode',500)),barcode=['HS','Label'].includes(b.mode)?hsCode(rawBarcode):rawBarcode;
         if (!['HS','Stock','Label'].includes(b.mode)) fail(400, 'Loại quét không hợp lệ.');
         const image = imageData(b.image);
         const result=transaction(db,()=>{
           const before=scanCount(barcode,b.mode);
           if (b.mode!=='HS' && b.reject_duplicate === true && before>0) return {blocked:true,count:before};
           const stock=b.mode==='Stock'?stockData(db,barcode):null;
-          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity,prior_count,raw_barcode) VALUES (?,?,?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,stock?.quantity??scanQuantity(barcode,b.mode),before,b.mode==='HS'?rawBarcode:null);
+          const saved=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image,quantity,prior_count,raw_barcode) VALUES (?,?,?,?,?,?,?,?,?)').run(id,barcode,b.mode,u.id,image.mime,image.buffer,stock?.quantity??scanQuantity(barcode,b.mode),before,['HS','Label'].includes(b.mode)?rawBarcode:null);
           if(stock)db.prepare('INSERT INTO scan_stock(scan_id,item_code,item_name,maker,vendor,lot_no,quantity_source) VALUES (?,?,?,?,?,?,?)').run(Number(saved.lastInsertRowid),stock.item_code,stock.item_name,stock.maker,stock.vendor,stock.lot_no,stock.quantity_source);
           return {id:Number(saved.lastInsertRowid),barcode_count:before+1,is_duplicate:before>0,prior_count:before};
         });
