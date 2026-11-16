@@ -5,6 +5,9 @@ import { parseMMWorkbook,parseMMInWorker,MAX_MM_BYTES } from '../lib/mm-workbook
 import { importMMRows,listMM,lookupAndSaveMM } from '../lib/mm-data.mjs';
 import { openDatabase } from '../lib/db.mjs';
 import { stockData } from '../lib/stock-data.mjs';
+import {mkdtempSync,rmSync} from 'node:fs';
+import {tmpdir} from 'node:os';
+import {join} from 'node:path';
 
 const headers=['S/L','LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY','Receipt DT','BP_CD','BP_NM','CUST_LBL_NO','LOT_NO','MAKER','LABEL_STS'];
 const row=(barcode,qty=2.125)=>['STORE','A-01','ITEM-TEST','Test item','10K 1608',barcode,qty,'2026-11-11','V001','Vendor','CUSTOMER','LOT-A','Maker','READY'];
@@ -44,15 +47,29 @@ function workbook(type='biff8',sheets=[['First',[row('BAR-1')]],['Second',[row('
 }
 test('MM imports quantities above one billion unchanged through XLS/XLSX, worker, SQLite and lookup',async()=>{
  for(const type of ['biff8','xlsx']){
-  const parsed=await parseMMInWorker(workbook(type,[['MM',[row('BIG-1',2_500_000_000.125),row('BIG-2',12_345_678_901)]]]));
+  const parsed=await parseMMInWorker(workbook(type,[['MM',[row('BIG-1',2_500_000_000.125),row('BIG-2',12_345_678_901),row('ZERO',0)]]]));
   const db=openDatabase(':memory:');try{
    importMMRows(db,parsed,'Synthetic large QTY');
    const rows=listMM(db,{field:'item_code',q:'ITEM-TEST'}).materials;
    assert.equal(rows.find(r=>r.samsung==='BIG-1').qty,2_500_000_000.125);
    assert.equal(rows.find(r=>r.samsung==='BIG-2').qty,12_345_678_901);
+   assert.equal(rows.find(r=>r.samsung==='ZERO').qty,0);
+   assert.equal(stockData(db,'ZERO').quantity,0);
   }finally{db.close();}
  }
- for(const invalid of [0,-1,'bad',Number.MAX_SAFE_INTEGER+1])assert.throws(()=>parseMMWorkbook(workbook('xlsx',[['MM',[row('BAD',invalid)]]])),/QTY/);
+ for(const invalid of ['',-1,'bad',Number.MAX_SAFE_INTEGER+1])assert.throws(()=>parseMMWorkbook(workbook('xlsx',[['MM',[row('BAD',invalid)]]])),/QTY/);
+});
+test('existing MM database migrates to zero QTY without losing rows or import references',()=>{
+ const dir=mkdtempSync(join(tmpdir(),'wa-mm-zero-')),file=join(dir,'mm.sqlite');let db;
+ try{
+  db=openDatabase(file);importMMRows(db,parseMMWorkbook(workbook('xlsx',[['MM',[row('EXISTING',12.125)]]])),'Old data');
+  const original=db.prepare('SELECT * FROM mm_inventory').get();
+  const schema=db.prepare("SELECT sql FROM sqlite_master WHERE name='mm_inventory'").get().sql.replace('CREATE TABLE mm_inventory','CREATE TABLE mm_legacy').replace('qty >= 0','qty > 0');
+  db.exec(schema);db.exec('INSERT INTO mm_legacy SELECT * FROM mm_inventory; DROP TABLE mm_inventory; ALTER TABLE mm_legacy RENAME TO mm_inventory;');db.close();
+  db=openDatabase(file);assert.deepEqual(db.prepare('SELECT * FROM mm_inventory').get(),original);
+  importMMRows(db,parseMMWorkbook(workbook('xlsx',[['MM',[row('ZERO',0)]]])),'Zero data');
+  assert.equal(stockData(db,'ZERO').quantity,0);assert.equal(db.prepare('PRAGMA integrity_check').get().integrity_check,'ok');assert.equal(db.prepare('PRAGMA foreign_key_check').all().length,0);
+ }finally{db?.close();rmSync(dir,{recursive:true,force:true});}
 });
 test('real XLS and XLSX formats read every sheet, find report headers and preserve decimal quantities',()=>{
   for(const type of ['biff8','xlsx']){
