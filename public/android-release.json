@@ -1,1 +1,1 @@
-{"package_id":"vn.hansol.workarea.offline","version_code":11,"version":"1.1.5","notes":"Thêm kiểm tra bản mới, thông báo cập nhật và tải/cài APK ngay trong ứng dụng. Giữ hỗ trợ nhập MM 128 MB."}
+{"package_id":"vn.hansol.workarea.offline","version_code":12,"version":"1.1.6","notes":"Tách nhập SO và CKD model list; chọn model list dùng lại cho nhiều SO. Giữ lịch sử và hỗ trợ kiểm tra offline sau khi đồng bộ dữ liệu."}

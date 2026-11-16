@@ -275,7 +275,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (req.method === 'POST' && path === '/api/ckd/import') {
         writeAccess(u);const b=await jsonBody(req,25*1024*1024);
         if(typeof b.file!=='string'||b.file.length>24*1024*1024||!/^data:.*?;base64,[A-Za-z0-9+/=]+$/.test(b.file))fail(400,'Chọn file .xlsx tối đa 18 MB.');
-        try {const parsed=parseCkdWorkbook(Buffer.from(b.file.slice(b.file.indexOf(',')+1),'base64'));return send(res,201,importCkdWorkbook(db,parsed,text(b.name,'Tên file / đơn hàng',200),u.id));}catch(e){fail(400,e.message);}
+        try {const parsed=parseCkdWorkbook(Buffer.from(b.file.slice(b.file.indexOf(',')+1),'base64'),b.kind||'combined');return send(res,201,importCkdWorkbook(db,parsed,text(b.name,'Tên file / đơn hàng',200),u.id));}catch(e){fail(400,e.message);}
       }
       if (req.method === 'POST' && ['/api/ckd/pair/check','/api/ckd/pair/save'].includes(path)) {
         const b=await jsonBody(req);if(path.endsWith('/save'))writeAccess(u);

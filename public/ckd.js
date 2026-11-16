@@ -4,7 +4,7 @@ export async function renderCkd(ctx){
   const $=s=>document.querySelector(s);let camera=null,autoCamera=false,current=null,images={},checkEpoch=0,checkTimer=null;
   const owner=state.user.id,key='wa-ckd-workbook-u'+owner;
   $('#main').innerHTML=pageTop('Kiểm tra CKD','')+`
-    <section class="panel ckd-source"><div class="table-tools"><h2>Đơn hàng SO</h2><a id="ckd-export" class="button small">${icon('download')} Xuất báo cáo</a></div><label class="field"><select id="ckd-workbook" aria-label="Đơn hàng SO"><option value="">Đang tải…</option></select></label><details><summary>Nhập Excel</summary><input type="file" id="ckd-file" accept=".xlsx" ${canWrite()?'':'disabled'}><p id="ckd-import-status" role="status"></p></details></section>
+    <section class="panel ckd-source"><div class="table-tools"><h2>Đơn hàng SO</h2><a id="ckd-export" class="button small">${icon('download')} Xuất báo cáo</a></div><label class="field"><select id="ckd-workbook" aria-label="Đơn hàng SO"><option value="">Đang tải…</option></select></label><label class="field">CKD model list<select id="ckd-model-workbook" aria-label="CKD model list"><option value="">Chọn model list</option></select></label><details><summary>Nhập SO</summary><input type="file" id="ckd-file" accept=".xlsx" ${canWrite()?'':'disabled'}><p id="ckd-import-status" role="status"></p></details><details><summary>Nhập CKD model list</summary><input type="file" id="ckd-model-file" accept=".xlsx" ${canWrite()?'':'disabled'}><p id="ckd-model-import-status" role="status"></p></details></section>
     <div class="columns"><section class="panel ckd-capture"><h2>Quét hai mã cho một box</h2><div class="ckd-steps"><span id="ckd-step-samsung" class="active">1 · Samsung</span><span id="ckd-step-item">2 · ITEM</span></div><button class="button primary full" id="ckd-camera">${icon('scan')} Quét camera · Samsung → ITEM</button><form id="ckd-pair-form">${field('1. Mã Samsung','ckd-samsung',{extra:'maxlength="500" autocapitalize="characters"',placeholder:'Quét mã Samsung trước'})}${field('2. ITEM code','ckd-item',{extra:'maxlength="500" autocapitalize="characters"',placeholder:'Quét mã ITEM trên box'})}<p class="form-message" id="ckd-pair-error" role="alert"></p><div class="actions equal"><button class="button" type="button" id="ckd-reset">Quét lại</button><button class="button primary" type="submit">Đối chiếu</button></div></form></section>
     <section class="panel"><h2>Tiến độ</h2><div id="ckd-progress"></div></section></div>
     <section class="panel"><div class="table-tools"><h2>Lịch sử</h2><button class="button small" id="ckd-reload">${icon('sync')} Tải lại</button></div><div id="ckd-history"></div></section>`;
@@ -25,7 +25,7 @@ export async function renderCkd(ctx){
   history.insertAdjacentHTML('afterend','<section class="panel ckd-reports"><h2>Báo cáo</h2><select id="ckd-report-scope" aria-label="Phạm vi báo cáo"><option value="current">Đơn hiện tại</option><option value="all">Tất cả đơn</option></select><div class="actions mt" id="ckd-report-actions"><a class="button primary" id="ckd-report-zip">ZIP báo cáo + ảnh</a></div></section>');
   $('#ckd-report-actions').prepend($('#ckd-export'));$('#ckd-report-scope').onchange=reportLinks;
   function workbook(){return Number($('#ckd-workbook').value);}
-  function body(){return {workbook_id:workbook(),session_name:$('#ckd-session-title').value,samsung:$('#ckd-samsung').value,item_code:$('#ckd-item').value};}
+  function body(){return {workbook_id:workbook(),model_workbook_id:Number($('#ckd-model-workbook').value),session_name:$('#ckd-session-title').value,samsung:$('#ckd-samsung').value,item_code:$('#ckd-item').value};}
   function steps(){const done=Boolean($('#ckd-samsung').value.trim());$('#ckd-step-samsung').classList.toggle('done',done);$('#ckd-step-item').classList.toggle('active',done);}
   function reset(){checkEpoch++;clearTimeout(checkTimer);current=null;images={};$('#ckd-pair-form').reset();$('#ckd-pair-error').textContent='';steps();if(manual.open)$('#ckd-samsung').focus();}
   let historyTab='scan',historyData=null,historyLoadEpoch=0;const selectedChecks=new Set(),canDelete=state.user.role==='admin';
@@ -74,12 +74,21 @@ export async function renderCkd(ctx){
     $('#ckd-progress').innerHTML=r.totals.filter(t=>t.workbook_id===id).map(t=>`<div class="ckd-progress-row"><strong>${e(t.samsung)}</strong><span>${n(t.boxes)} box · ${n(t.total)} / ${n(t.target)}</span></div>`).join('');paintHistory();
   }
   function orderUI(){const name=$('#ckd-workbook').selectedOptions[0]?.textContent||'Chọn đơn hàng';$('#ckd-so-summary').textContent=name;}
-  async function sources(selectId){const r=await api('/ckd/workbooks');if(!$('#ckd-workbook'))return;$('#ckd-workbook').innerHTML='<option value="">Chọn đơn hàng</option>'+r.workbooks.map(w=>`<option value="${w.id}">${e(w.name)}</option>`).join('');let saved;try{saved=localStorage.getItem(key);}catch{}$('#ckd-workbook').value=String(selectId||saved||r.workbooks[0]?.id||'');orderUI();await loadHistory();}
-  $('#ckd-workbook').onchange=()=>{try{localStorage.setItem(key,String(workbook()));}catch{}reset();orderUI();loadHistory().catch(err=>toast(err.message));};
+  let sourceRows=[];
+  function models(selectId){
+    const choices=sourceRows.filter(w=>w.models>0),id=workbook();let saved;try{saved=localStorage.getItem(key+'-models-'+id);}catch{}
+    $('#ckd-model-workbook').innerHTML='<option value="">Chọn model list</option>'+choices.map(w=>`<option value="${w.id}">${e(w.name)}</option>`).join('');
+    const own=choices.find(w=>w.id===id),fallback=own||choices.find(w=>w.kind==='models')||choices[0];
+    const preferred=Number(selectId||saved||fallback?.id);$('#ckd-model-workbook').value=String(choices.some(w=>w.id===preferred)?preferred:fallback?.id||'');
+  }
+  async function sources(selectId,modelId){const r=await api('/ckd/workbooks');if(!$('#ckd-workbook'))return;sourceRows=r.workbooks;const orders=sourceRows.filter(w=>w.orders>0);$('#ckd-workbook').innerHTML='<option value="">Chọn đơn hàng</option>'+orders.map(w=>`<option value="${w.id}">${e(w.name)}</option>`).join('');let saved;try{saved=localStorage.getItem(key);}catch{}const preferred=Number(selectId||saved||orders[0]?.id);$('#ckd-workbook').value=String(orders.some(w=>w.id===preferred)?preferred:orders[0]?.id||'');models(modelId);orderUI();await loadHistory();}
+  $('#ckd-workbook').onchange=()=>{try{localStorage.setItem(key,String(workbook()));}catch{}models();reset();orderUI();loadHistory().catch(err=>toast(err.message));};
+  $('#ckd-model-workbook').onchange=()=>{try{localStorage.setItem(key+'-models-'+workbook(),$('#ckd-model-workbook').value);}catch{}reset();};
   $('#ckd-reload').onclick=()=>loadHistory().catch(err=>toast(err.message));$('#ckd-reset').onclick=reset;
-  $('#ckd-file').onchange=async event=>{
-    const file=event.target.files[0];if(!file)return;const status=$('#ckd-import-status');event.target.disabled=true;
-    try{if(!/\.xlsx$/i.test(file.name)||file.size>18*1024*1024)throw Error('Chọn file .xlsx tối đa 18 MB.');status.textContent='Đang đọc và nhập hai sheet…';const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('Không đọc được file.'));reader.readAsDataURL(file);});const r=await api('/ckd/import',{method:'POST',data:{file:data,name:file.name}});status.textContent=`Đã nhập ${r.orders} dòng SO, ${r.models} model. ${r.missing_moq} model cần kiểm tra MOQ khi sử dụng.`;await sources(r.id);reset();}catch(err){status.textContent=err.message;}finally{event.target.disabled=!canWrite();event.target.value='';}
+  let importing=false;
+  for(const [input,statusId,kind]of [['#ckd-file','#ckd-import-status','so'],['#ckd-model-file','#ckd-model-import-status','models']])$(input).onchange=async event=>{
+    const file=event.target.files[0];if(!file)return;const status=$(statusId);if(importing){status.textContent='Đang nhập file khác. Vui lòng chờ.';event.target.value='';return;}importing=true;event.target.disabled=true;
+    try{if(!/\.xlsx$/i.test(file.name)||file.size>18*1024*1024)throw Error('Chọn file .xlsx tối đa 18 MB.');status.textContent='Đang nhập '+(kind==='so'?'SO':'CKD model list')+'…';const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=()=>reject(Error('Không đọc được file.'));reader.readAsDataURL(file);});const r=await api('/ckd/import',{method:'POST',data:{file:data,name:file.name,kind}});status.textContent=kind==='so'?'Đã nhập '+n(r.orders)+' dòng SO.':'Đã nhập '+n(r.models)+' model.';await sources(kind==='so'?r.id:workbook(),kind==='models'?r.id:Number($('#ckd-model-workbook').value));try{localStorage.setItem(key+'-models-'+workbook(),$('#ckd-model-workbook').value);}catch{}reset();}catch(err){status.textContent=err.message;}finally{importing=false;event.target.disabled=!canWrite();event.target.value='';}
   };
   async function showCheck(data,requestId=crypto.randomUUID(),evidence={...images},edit={open:[],qtyOverride:Object.hasOwn(data,'qty')}){
     if(!$('#ckd-pair-form')||state.user?.id!==owner)return;
@@ -127,7 +136,7 @@ export async function renderCkd(ctx){
     };
   }
   function startCamera(){
-    if(!workbook()){toast('Chọn file SO / CKD model list trước.');soDetails.open=true;source.scrollIntoView({behavior:'smooth'});return;}stopCamera();camera?.close();autoCamera=true;
+    if(!workbook()||!Number($('#ckd-model-workbook').value)){toast('Chọn SO và CKD model list trước.');soDetails.open=true;source.scrollIntoView({behavior:'smooth'});return;}stopCamera();camera?.close();autoCamera=true;
     let target=$('#ckd-samsung').value.trim()?'item':'samsung';
     const input=slot=>$('#ckd-'+slot);
     function pairUI(){
