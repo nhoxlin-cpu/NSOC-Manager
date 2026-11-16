@@ -68,14 +68,14 @@ async function session() {
 async function loadPreferences() {
   try {state.autoCapture=localStorage.getItem('wa-auto-capture-u'+state.user?.id)!=='false';}catch{state.autoCapture=true;}
   state.navigation=[...defaultNavigation];state.continuousScan=true;
-  if (state.user) try {const result=await api('/preferences');state.navigation=result.navigation;state.continuousScan=result.continuous_scan!==false;} catch(e) {if(!e.network && e.status!==401) toast(e.message);}
+  if (state.user) try {const result=await api('/preferences');state.navigation=result.navigation;state.continuousScan=true;} catch(e) {if(!e.network && e.status!==401) toast(e.message);}
 }
 function updateContinuousUI() {
-  document.querySelectorAll('[data-continuous-toggle]').forEach(button=>{button.setAttribute('aria-pressed',String(state.continuousScan));button.classList.toggle('enabled',state.continuousScan);const label='Quét liên tục: '+(state.continuousScan?'Bật':'Tắt');button.setAttribute('aria-label',label);button.title=label;if(button.closest('.capture-actions'))button.innerHTML=icon('sync');else button.textContent=label;});
+  document.querySelectorAll('[data-continuous-toggle]').forEach(button=>{button.hidden=true;button.style.display="none";button.setAttribute('aria-pressed',String(state.continuousScan));button.classList.toggle('enabled',state.continuousScan);const label='Quét liên tục: '+(state.continuousScan?'Bật':'Tắt');button.setAttribute('aria-label',label);button.title=label;if(button.closest('.capture-actions'))button.innerHTML=icon('sync');else button.textContent=label;});
   if(phoneScanner&&phoneScanner.continuous!==state.continuousScan)phoneScanner.setContinuous(state.continuousScan,false);
 }
 async function setContinuousScan(on) {
-  state.continuousScan=on;updateContinuousUI();
+  on=true;state.continuousScan=true;updateContinuousUI();
   try{await api('/preferences',{method:'POST',data:{continuous_scan:on}});}catch(e){toast(e.network?'Đã áp dụng chế độ quét trên màn hình này; chưa lưu lên tài khoản vì mất kết nối.':e.message);}
 }
 function scanFlowBar(target, compact = false) {

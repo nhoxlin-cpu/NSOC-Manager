@@ -31,7 +31,7 @@ export class PhoneScanner {
   constructor(dialog, options) {
     this.dialog=dialog; this.options=options; this.epoch=0; this.saved=0; this.queued=0; this.seen=new Map(); this.alerts=[];
     this.pointers=new Map();this.digitalZoom=1;this.opticalZoom=1;this.videoPan={x:0,y:0};this.glare=false;this.framePass=0;
-    this.continuous=options.continuous!==false;this.singlePaused=false;this.captured=0;
+    this.continuous=true;this.singlePaused=false;this.captured=0;
     this.format=pref('format','barcode') === 'qr' ? 'qr' : 'barcode'; this.sound=pref('sound','true') === 'true'; this.vibration=pref('vibration','true') === 'true';
     this.canvas=document.createElement('canvas'); this.context=this.canvas.getContext('2d',{willReadFrequently:true});
     this.evidenceCanvas=document.createElement('canvas');
@@ -50,7 +50,7 @@ export class PhoneScanner {
         <div class="scanner-tools"><label class="scanner-zoom-label"><span class="sr-only">Mức phóng đại camera</span><select id="scanner-zoom" aria-label="Mức phóng đại camera" disabled><option value="1">×1</option></select></label><div class="scanner-round-tools"><button class="scanner-round" id="scanner-vibration" aria-label="Rung khi đọc mã">${svg('vibration')}</button><button class="scanner-round" id="scanner-sound" aria-label="Âm thanh khi đọc mã">${svg('sound')}</button></div></div><div class="scanner-assist"><button id="scanner-glare" aria-pressed="false">${svg('glare')} Nhãn bóng / chói</button><button id="scanner-reset-view">Đặt lại khung</button></div><p class="scanner-assist-note" id="scanner-assist-note" hidden></p>
       </section><div class="scanner-bottom"><button class="scanner-back" id="scanner-back" aria-label="Đóng camera">${svg('back')}</button><button class="scanner-manual" id="scanner-manual">Nhập mã bằng tay</button><button class="scanner-flash" id="scanner-flash" aria-label="Bật đèn flash" aria-pressed="false" disabled>${svg('flash')}</button></div></div>`;
     this.$=s => dialog.querySelector(s); this.video=this.$('video');this.$('.scanner-body').append(this.$('#scanner-frame-label'));
-    this.$('#scanner-continuous').hidden=options.hideContinuous===true;
+    this.$('#scanner-continuous').hidden=true;
     this.$('#scanner-title').textContent=options.title || `Scan ${options.mode}`;
     this.$('#scanner-back').onclick=() => this.close();
     this.$('#scanner-manual').onclick=() => { this.close(); options.onManual?.(); };
@@ -97,9 +97,9 @@ export class PhoneScanner {
     this.dialog.dataset.scanFlow=this.singlePaused?'paused':this.continuous?'continuous':'single';
   }
   setContinuous(on,notify=true) {
-    this.continuous=on;
-    if(on)this.singlePaused=false;else if(this.lastCode&&!this.busy)this.singlePaused=true;
-    this.flowUI();if(notify)this.options.onContinuousChange?.(on);
+    this.continuous=true;
+    this.singlePaused=false;
+    this.flowUI();if(notify)this.options.onContinuousChange?.(true);
   }
   resumeSingle() {
     this.singlePaused=false;this.latched='';this.lastRead='';this.candidate='';this.hits=0;this.candidateTime=0;this.flowUI();this.paint('ready','Sẵn sàng quét mã tiếp theo',this.lastCode);
