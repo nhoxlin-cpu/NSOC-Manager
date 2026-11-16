@@ -19,6 +19,8 @@ done
 [[ $ID == ubuntu && ($VERSION_ID == 22.04 || $VERSION_ID == 24.04) ]] || { echo 'Ubuntu 22.04 or 24.04 required.' >&2; exit 1; }
 [[ -n $DOMAIN ]] || read -r -p 'Domain pointing to this VPS (without https://): ' DOMAIN
 [[ ${#DOMAIN} -le 253 && $DOMAIN =~ ^[a-zA-Z0-9]([a-zA-Z0-9.-]*[a-zA-Z0-9])?$ ]] || { echo 'Invalid hostname.' >&2; exit 1; }
+DOMAIN=${DOMAIN,,}
+[[ -d /run/systemd/system ]] || { echo 'systemd is required.' >&2; exit 1; }
 [[ -f $BACKUP ]] || { echo 'Recovery ZIP not found.' >&2; exit 1; }
 BACKUP=$(readlink -f -- "$BACKUP")
 for target in /opt/work-area /var/lib/work-area /etc/work-area /etc/systemd/system/work-area.service; do
