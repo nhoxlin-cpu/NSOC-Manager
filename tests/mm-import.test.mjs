@@ -8,6 +8,16 @@ import { stockData } from '../lib/stock-data.mjs';
 
 const headers=['S/L','LOCATION','ITEM CD','ITEM NM','SPEC','BARCODE_NO','QTY','Receipt DT','BP_CD','BP_NM','CUST_LBL_NO','LOT_NO','MAKER','LABEL_STS'];
 const row=(barcode,qty=2.125)=>['STORE','A-01','ITEM-TEST','Test item','10K 1608',barcode,qty,'2026-11-11','V001','Vendor','CUSTOMER','LOT-A','Maker','READY'];
+test('MM worker serializes imports, releases its slot after errors and accepts transferred workbook bytes',async()=>{
+ const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([headers,row('LARGE-READY')]),'MM');
+ const bytes=Buffer.from(XLSX.write(wb,{type:'buffer',bookType:'xls'}));
+ const pending=parseMMInWorker(bytes);
+ await assert.rejects(parseMMInWorker(bytes),/đang đọc file MM/);
+ assert.equal((await pending).rows[0].barcode,'LARGE-READY');
+ await assert.rejects(parseMMInWorker(Buffer.from('invalid workbook')),/Excel/);
+ assert.equal((await parseMMInWorker(bytes)).rows.length,1);
+ assert.equal(MAX_MM_BYTES,128*1024*1024);
+});
 test('Spec deduplicates ITEM across boxes, sums decimal quantities, keeps locations and paginates unique items',()=>{
  const db=openDatabase(':memory:');try{
  const rows=Array.from({length:202},(_,i)=>({barcode:'SPEC-'+i,item_code:i<2?'DUP':'ITEM-'+String(i).padStart(4,'0'),item_name:'Part',spec:'120uF',location:i?'A2':'A1',qty:1.125,lot_no:'L'+i,source_sheet:'QA',source_row:i+1}));
@@ -47,7 +57,7 @@ test('invalid nonempty sheets, duplicate barcodes and invalid input fail instead
   const wb=XLSX.utils.book_new();XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([headers,row('GOOD')]),'Good');XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Unexpected data']]),'Bad');
   assert.throws(()=>parseMMWorkbook(XLSX.write(wb,{type:'buffer',bookType:'xlsx'})),/Bad/);
   assert.throws(()=>parseMMWorkbook(workbook('biff8',[['First',[row('SAME')]],['Second',[row('SAME')]]])),/trùng/);
-  assert.throws(()=>parseMMWorkbook(Buffer.from('not Excel')),/hợp lệ/);assert.throws(()=>parseMMWorkbook(Buffer.alloc(MAX_MM_BYTES+1)),/32 MB/);
+  assert.throws(()=>parseMMWorkbook(Buffer.from('not Excel')),/hợp lệ/);assert.throws(()=>parseMMWorkbook(Buffer.alloc(MAX_MM_BYTES+1)),/128 MB/);
 });
 test('import retains separate barcode rows for one ITEM, updates by barcode and exposes every page',()=>{
   const db=openDatabase(':memory:');

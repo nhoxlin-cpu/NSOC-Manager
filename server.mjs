@@ -59,9 +59,9 @@ async function jsonBody(req, limit = 5 * 1024 * 1024) {
 }
 async function workbookBody(req,label='MM'){
   if(req.headers['content-type']?.split(';')[0]!=='application/octet-stream')fail(415,'Gửi trực tiếp file Excel .xls hoặc .xlsx.');
-  if(Number(req.headers['content-length'])>MAX_MM_BYTES)fail(413,`File ${label} tối đa 32 MB.`);
+  if(Number(req.headers['content-length'])>MAX_MM_BYTES)fail(413,`File ${label} tối đa 128 MB.`);
   const chunks=[];let total=0;
-  for await(const chunk of req){total+=chunk.length;if(total>MAX_MM_BYTES)fail(413,`File ${label} tối đa 32 MB.`);chunks.push(chunk);}
+  for await(const chunk of req){total+=chunk.length;if(total>MAX_MM_BYTES)fail(413,`File ${label} tối đa 128 MB.`);chunks.push(chunk);}
   if(!total)fail(400,`File ${label} rỗng.`);return Buffer.concat(chunks,total);
 }
 function imageData(source) {
@@ -346,11 +346,11 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return send(res,200,importMMRows(db,parsed,name));
       }
       if (req.method === 'POST' && path === '/api/materials/import') {
-        adminAccess(u); const b = await jsonBody(req,46*1024*1024);
+        adminAccess(u); const b = await jsonBody(req,172*1024*1024);
         if(Object.hasOwn(b,'file')){
-          if(typeof b.file!=='string'||b.file.length>Math.ceil(MAX_MM_BYTES/3)*4+200||!/^data:[^,]*;base64,[A-Za-z0-9+/=]+$/.test(b.file))fail(400,'Chọn file MM .xls / .xlsx tối đa 32 MB.');
+          if(typeof b.file!=='string'||b.file.length>Math.ceil(MAX_MM_BYTES/3)*4+200||!/^data:[^,]*;base64,[A-Za-z0-9+/=]+$/.test(b.file))fail(400,'Chọn file MM .xls / .xlsx tối đa 128 MB.');
           const bytes=Buffer.from(b.file.slice(b.file.indexOf(',')+1),'base64');
-          if(bytes.length>MAX_MM_BYTES)fail(400,'File MM tối đa 32 MB.');
+          if(bytes.length>MAX_MM_BYTES)fail(400,'File MM tối đa 128 MB.');
           const name=text(b.name,'Tên file',200);
           let parsed;try{parsed=await parseMMInWorker(bytes);}catch(e){fail(400,e.message);}
           return send(res,200,importMMRows(db,parsed,name));
@@ -499,7 +499,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       if (!res.headersSent) send(res, status, { error: message }); else res.end();
     }
   });
-  server.requestTimeout = 300_000; server.headersTimeout = 15_000;
+  server.requestTimeout = 900_000; server.headersTimeout = 15_000;
   server.on('close',()=>clearInterval(watchTimer));
   return server;
 }
