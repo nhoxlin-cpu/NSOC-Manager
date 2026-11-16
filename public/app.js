@@ -166,24 +166,28 @@ async function account() {
 function mmImportSettings(target=$('.account-layout'),open=false){
   if(state.user?.role!=='admin')return;
   const panel=document.createElement('section');panel.className='panel';panel.id='mm-settings';
-  panel.innerHTML=`<details id="mm-settings-details"><summary>Cài đặt · Dữ liệu MM</summary><p class="muted">MM dùng chung cho Stock, tra cứu và CKD. Nhập Excel .xls / .xlsx (tối đa 32 MB, đọc tất cả sheet) hoặc CSV UTF-8 (2 MB). File Excel giữ từng barcode, lô, vị trí và QTY thập phân; barcode đã có được cập nhật, các dòng khác được giữ lại.</p><p class="muted">Thêm cột qty và lot_no nếu có dữ liệu Stock. qty riêng với Selling Q’ty và MOQ; ô trống để chưa xác định. Nhãn có QTY / Lot No rõ ràng được ưu tiên khi quét. Lịch sử mới giữ thông tin tại thời điểm quét.</p>${button('Tải CSV mẫu','mm-template','small','download')}<form id="mm-import" class="mt"><div class="field"><label for="mm-file">File MM (.xls, .xlsx, .csv)</label><input id="mm-file" type="file" accept=".xls,.xlsx,.csv,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,text/csv" required></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">Nhập MM</button></form><div id="mm-import-status" class="muted" role="status"></div></details>`;
+  panel.innerHTML=`<details id="mm-settings-details"><summary>Cài đặt · Dữ liệu MM</summary><p class="muted">MM dùng chung cho Stock, tra cứu và CKD. Nhập Excel .xls / .xlsx (tối đa 32 MB, đọc tất cả sheet) hoặc CSV UTF-8 (2 MB). File Excel giữ từng barcode, lô, vị trí và QTY thập phân; barcode đã có được cập nhật, các dòng khác được giữ lại.</p><p class="muted">Thêm cột qty và lot_no nếu có dữ liệu Stock. qty riêng với Selling Q’ty và MOQ; ô trống để chưa xác định. Nhãn có QTY / Lot No rõ ràng được ưu tiên khi quét. Lịch sử mới giữ thông tin tại thời điểm quét.</p>${button('Tải CSV mẫu','mm-template','small','download')}${[["pmd30","PMD30"],["pba20","PBA20"]].map(([key,label])=>`<section class="mt"><h3>Nhập ${label}</h3><form id="mm-import-${key}"><div class="field"><label for="mm-file-${key}">File ${label} (.xls, .xlsx, .csv)</label><input id="mm-file-${key}" type="file" accept=".xls,.xlsx,.csv" required></div><p class="form-message" role="alert"></p><button class="button primary" type="submit">Nhập ${label}</button></form><div id="mm-import-status-${key}" class="muted" role="status"></div></section>`).join('')}</details>`;
   target.append(panel);
   $('#mm-template',panel).onclick=()=>downloadText('work-area-mm-template.csv','\uFEFFitem_code,samsung,item,description,maker,vendor,location,selling_qty,moq,qty,lot_no\n');
-  formAction('#mm-import',async(_,form)=>{
-    const file=$('#mm-file').files[0];if(!file)throw Error('Chọn file MM.');
+  let importing=false;
+  for(const [key,label] of [['pmd30','PMD30'],['pba20','PBA20']])formAction('#mm-import-'+key,async(_,form)=>{
+    if(importing)throw Error('Đang nhập file MM khác. Vui lòng chờ hoàn tất.');
+    importing=true;try{
+    const file=$('#mm-file-'+key,panel).files[0];if(!file)throw Error('Chọn file MM.');
     const csv=/\.csv$/i.test(file.name);if(file.size>(csv?2_000_000:32*1024*1024))throw Error(csv?'CSV tối đa 2 MB.':'Excel tối đa 32 MB.');
     if(!/\.(xls|xlsx|csv)$/i.test(file.name))throw Error('Chọn file .xls, .xlsx hoặc .csv.');
-    $('#mm-import-status',panel).textContent=csv?'Đang nhập CSV…':'Đang tải và đọc tất cả sheet. Vui lòng giữ trang mở…';
-    let result;try{result=csv?await api('/materials/import',{method:'POST',data:{csv:await file.text()},timeoutMs:420000}):await api('/materials/import-file',{method:'POST',file,timeoutMs:420000});}catch(e){$('#mm-import-status',panel).textContent='Chưa xác nhận được kết quả nhập.';throw e;}
+    $('#mm-import-status-'+key,panel).textContent=csv?'Đang nhập CSV…':'Đang tải và đọc tất cả sheet. Vui lòng giữ trang mở…';
+    let result;try{result=csv?await api('/materials/import',{method:'POST',data:{csv:await file.text()},timeoutMs:420000}):await api('/materials/import-file',{method:'POST',file,timeoutMs:420000});}catch(e){$('#mm-import-status-'+key,panel).textContent='Chưa xác nhận được kết quả nhập.';throw e;}
     form.reset();
-    $('#mm-import-status',panel).textContent=`Đã nhập ${number(result.count)} dòng MM.`;
+    $('#mm-import-status-'+key,panel).textContent=`Đã nhập ${number(result.count)} dòng MM.`;
     if(result.sheets){
       const list=document.createElement('ul');
       for(const sheet of result.sheets){const li=document.createElement('li');li.textContent=`${sheet.name}: ${number(sheet.rows)} dòng dữ liệu${sheet.totalRows?' · '+sheet.totalRows+' dòng tổng không tính là vật tư':''}${sheet.empty?' · Sheet trống':''}`;list.append(li);}
-      $('#mm-import-status',panel).append(list);
-      const note=document.createElement('p');note.textContent=`Thêm mới ${number(result.inserted)} · Cập nhật ${number(result.updated)}. Đã đọc đủ ${result.sheets.length} sheet.`;$('#mm-import-status',panel).append(note);
+      $('#mm-import-status-'+key,panel).append(list);
+      const note=document.createElement('p');note.textContent=`Thêm mới ${number(result.inserted)} · Cập nhật ${number(result.updated)}. Đã đọc đủ ${result.sheets.length} sheet.`;$('#mm-import-status-'+key,panel).append(note);
     }
-    toast('Đã cập nhật MM.');
+    toast('Đã cập nhật '+label+'.');
+    }finally{importing=false;}
   });
   if(open)$('#mm-settings-details',panel).open=true;
   if(!open&&location.hash.includes('mm-settings')){$('#mm-settings-details',panel).open=true;requestAnimationFrame(()=>panel.isConnected&&panel.scrollIntoView({block:'start'}));}
