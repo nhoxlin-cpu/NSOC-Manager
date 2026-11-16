@@ -57,3 +57,5 @@
 
 /* HEVH wordmark fits the existing compact brand tile. */
 .brand-mark{font-size:14px;letter-spacing:.2px;padding-right:0;font-weight:800}.brand-dot{width:4px;height:4px;bottom:9px;right:8px}
+
+.app-update-banner{position:fixed;bottom:calc(90px + env(safe-area-inset-bottom));left:12px;right:12px;z-index:55;max-width:640px;margin:auto;padding:12px;border:1px solid #c6d9f7;border-radius:16px;background:#fff;box-shadow:0 6px 30px #12314330;display:flex;align-items:center;flex-wrap:wrap;gap:8px;font-size:13px}.app-update-banner span{flex:1;min-width:130px}.scanner-open .app-update-banner{display:none}
