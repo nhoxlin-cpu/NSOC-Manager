@@ -42,6 +42,18 @@ function workbook(type='biff8',sheets=[['First',[row('BAR-1')]],['Second',[row('
   for(const [name,rows]of sheets)XLSX.utils.book_append_sheet(wb,XLSX.utils.aoa_to_sheet([['Report'],[],[],[],[],[],[],headers,...rows]),name);
   return XLSX.write(wb,{type:'buffer',bookType:type});
 }
+test('MM imports quantities above one billion unchanged through XLS/XLSX, worker, SQLite and lookup',async()=>{
+ for(const type of ['biff8','xlsx']){
+  const parsed=await parseMMInWorker(workbook(type,[['MM',[row('BIG-1',2_500_000_000.125),row('BIG-2',12_345_678_901)]]]));
+  const db=openDatabase(':memory:');try{
+   importMMRows(db,parsed,'Synthetic large QTY');
+   const rows=listMM(db,{field:'item_code',q:'ITEM-TEST'}).materials;
+   assert.equal(rows.find(r=>r.samsung==='BIG-1').qty,2_500_000_000.125);
+   assert.equal(rows.find(r=>r.samsung==='BIG-2').qty,12_345_678_901);
+  }finally{db.close();}
+ }
+ for(const invalid of [0,-1,'bad',Number.MAX_SAFE_INTEGER+1])assert.throws(()=>parseMMWorkbook(workbook('xlsx',[['MM',[row('BAD',invalid)]]])),/QTY/);
+});
 test('real XLS and XLSX formats read every sheet, find report headers and preserve decimal quantities',()=>{
   for(const type of ['biff8','xlsx']){
     const total=Array(14).fill('');total[6]=9;
