@@ -43,7 +43,9 @@ cd "$STAGE"
 curl --fail --silent --show-error --location --proto '=https' https://nodejs.org/dist/latest-v24.x/SHASUMS256.txt -o SHASUMS256.txt
 NODE_FILE=$(awk -v suffix="-linux-$ARCH.tar.xz" '$2 ~ /node-v24\./ && substr($2,length($2)-length(suffix)+1)==suffix {print $2; exit}' SHASUMS256.txt)
 [[ $NODE_FILE =~ ^node-v24\.[0-9]+\.[0-9]+-linux-(x64|arm64)\.tar\.xz$ ]] || { echo 'Unable to resolve official Node 24 runtime.' >&2; exit 1; }
-curl --fail --silent --show-error --location --proto '=https' "https://nodejs.org/dist/latest-v24.x/$NODE_FILE" -o "$NODE_FILE"
+NODE_VERSION=${NODE_FILE#node-}
+NODE_VERSION=${NODE_VERSION%-linux-*}
+curl --fail --silent --show-error --location --proto '=https' "https://nodejs.org/dist/$NODE_VERSION/$NODE_FILE" -o "$NODE_FILE"
 awk -v name="$NODE_FILE" '$2==name' SHASUMS256.txt | sha256sum --check --strict -
 mkdir node
 # Only official Node runtime archive, verified against its HTTPS checksum manifest.
