@@ -67,6 +67,11 @@ install -d -m 700 -o work-area -g work-area /var/lib/work-area/private
 ln -s /var/lib/work-area/private /opt/work-area/private
 cp -- "$BACKUP" /var/lib/work-area/private/recovery-backup.zip
 cp -- "$STAGE/restore/RESTORE.md" /var/lib/work-area/private/recovery-backup.zip.guide.txt
+python3 - "$STAGE/restore/manifest.json" /var/lib/work-area/private/recovery-backup.zip.json <<'PY'
+import json,sys
+manifest=json.load(open(sys.argv[1]))
+with open(sys.argv[2],'w') as output:json.dump({'createdAt':manifest['createdAt'],'build':'restored-ubuntu'},output)
+PY
 chown -R work-area:work-area /var/lib/work-area/private
 chown -R root:root /opt/work-area
 chmod -R u=rwX,go=rX /opt/work-area
