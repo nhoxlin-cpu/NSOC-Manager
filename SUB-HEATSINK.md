@@ -21,7 +21,7 @@ import to make that version (including photos) available without a connection.
 Import itself requires the server. No customer workbook or production data is
 bundled in the public source or APK.
 
-Phone 1.1.12 (version code 18) includes this screen. Automated browser/snapshot
+Phone 1.1.13 (version code 19) includes this screen. Automated browser/snapshot
 checks cover offline lookup; native installation/update prompts still require a
 physical Android device.
 
