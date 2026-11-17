@@ -17,3 +17,7 @@ test('IC vendors pair first and second arrows by source order, never invent mism
  const v=heatsinkVendors({code:'DIODE: IC-A\nDIODE: IC-B',description:'→ D15SB60, DACHANG\n→ GBJ1506, YANGJIE'});assert.equal(v.length,2);assert.deepEqual(v.map(v=>[v.vendor,v.code,v.description]),[[1,'DIODE: IC-A','D15SB60, DACHANG'],[2,'DIODE: IC-B','GBJ1506, YANGJIE']]);
  assert.equal(heatsinkVendors({code:'ONE',description:'→ A → B'}),null);assert.equal(heatsinkVendors({code:'ONE',description:'Single vendor'})[0].vendor,1);
 });
+
+test('code list counts distinct Sub codes, exact-code detail preserves all matching source groups',()=>{
+ const db=openDatabase(':memory:');try{const p=parseHeatsink(fixture());importHeatsink(db,p,'fixture.xlsx');assert.equal(listHeatsink(db).code_count,3);const r=listHeatsink(db,{code:'00123',model:'MODEL-A'});assert.equal(r.total,2);assert.equal(r.code_count,1);assert.ok(r.groups.every(g=>g.sub_code==='00123'&&g.model==='MODEL-A'));assert.equal(listHeatsink(db,{code:'0012'}).total,0);assert.equal(businessApi(db,{id:1,role:'viewer'},'/heatsink?code=00123&model=MODEL-A').total,2);}finally{db.close();}
+});
