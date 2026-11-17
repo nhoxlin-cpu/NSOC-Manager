@@ -1,3 +1,5 @@
+import {listHeatsink,importHeatsink} from './lib/heatsink-data.mjs';
+import {parseHeatsinkInWorker} from './lib/heatsink-workbook.mjs';
 import {EventEmitter} from 'node:events';
 import {appRelease} from './lib/app-release.mjs';
 import {initWatch,watchRate,pairStart,approvePair,redeemPair,watchDevice,senderStatus,setSender,revokeWatch,publishWatch,watchHistory} from './lib/watch.mjs';
@@ -58,11 +60,11 @@ async function jsonBody(req, limit = 5 * 1024 * 1024) {
   try { const value = JSON.parse(Buffer.concat(chunks)); if (!value || Array.isArray(value) || typeof value !== 'object') throw Error(); return value; }
   catch { fail(400, 'Dữ liệu JSON không hợp lệ.'); }
 }
-async function workbookBody(req,label='MM'){
+async function workbookBody(req,label='MM',limit=MAX_MM_BYTES){
   if(req.headers['content-type']?.split(';')[0]!=='application/octet-stream')fail(415,'Gửi trực tiếp file Excel .xls hoặc .xlsx.');
-  if(Number(req.headers['content-length'])>MAX_MM_BYTES)fail(413,`File ${label} tối đa 128 MB.`);
+  if(Number(req.headers['content-length'])>limit)fail(413,`File ${label} tối đa ${Math.round(limit/1024/1024)} MB.`);
   const chunks=[];let total=0;
-  for await(const chunk of req){total+=chunk.length;if(total>MAX_MM_BYTES)fail(413,`File ${label} tối đa 128 MB.`);chunks.push(chunk);}
+  for await(const chunk of req){total+=chunk.length;if(total>limit)fail(413,`File ${label} tối đa ${Math.round(limit/1024/1024)} MB.`);chunks.push(chunk);}
   if(!total)fail(400,`File ${label} rỗng.`);return Buffer.concat(chunks,total);
 }
 function imageData(source) {
@@ -112,7 +114,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
           return res.end(req.method==='HEAD'?undefined:buffer);
         }
         const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/app-updates.js':['app-updates.js','text/javascript'],'/watch-results.js':['watch-results.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/heatsink.js':['heatsink.js','text/javascript'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/app-updates.js':['app-updates.js','text/javascript'],'/watch-results.js':['watch-results.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
@@ -228,7 +230,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'POST' && path === '/api/preferences') {
         const body=await jsonBody(req),hasNavigation=Object.hasOwn(body,'navigation'),hasContinuous=Object.hasOwn(body,'continuous_scan'),navigation=hasNavigation ? body.navigation : ['home','scan','assistant','account'];
-        const allowed=['home','scan','ckd','cut','holding','mm','assistant','account'];
+        const allowed=['heatsink','home','scan','ckd','cut','holding','mm','assistant','account'];
         if (!hasNavigation && !hasContinuous) fail(400,'Cần gửi phím tắt hoặc chế độ quét.');
         if (hasContinuous && typeof body.continuous_scan!=='boolean') fail(400,'Chế độ quét liên tục phải là bật hoặc tắt.');
         if (!Array.isArray(navigation) || navigation.length<3 || navigation.length>5 || new Set(navigation).size!==navigation.length || navigation.some(x=>typeof x!=='string' || !allowed.includes(x))) fail(400,'Chọn từ 3 đến 5 phím tắt khác nhau trong danh sách.');
@@ -293,6 +295,13 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         let report;try{report=ckdReport(db,all?0:workbook,{exportedBy:u.name,imageLinks:path.endsWith('.zip')});}catch(e){fail(400,e.message);}
         if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
+      }
+      if(req.method==='GET'&&path==='/api/heatsink')return send(res,200,listHeatsink(db,Object.fromEntries(url.searchParams)));
+      const heatsinkImage=/^\/api\/heatsink\/image\/([a-f0-9]{64})$/.exec(path);
+      if(req.method==='GET'&&heatsinkImage){const row=db.prepare('SELECT mime,bytes FROM heatsink_images WHERE id=?').get(heatsinkImage[1]);if(!row)fail(404,'Không tìm thấy ảnh.');res.writeHead(200,{'Content-Type':row.mime,'Cache-Control':'private, max-age=3600'});res.end(row.bytes);return;}
+      if(req.method==='POST'&&path==='/api/heatsink/import-file'){
+        adminAccess(u);let name;try{name=decodeURIComponent(req.headers['x-mm-file-name']||'');}catch{fail(400,'Tên file không hợp lệ.');}name=text(name,'Tên file',200);
+        const bytes=await workbookBody(req,'Sub Heatsink',200*1024*1024);let parsed;try{parsed=await parseHeatsinkInWorker(bytes);}catch(e){fail(400,e.message);}return send(res,201,importHeatsink(db,parsed,name));
       }
       if(req.method==='GET'&&path==='/api/cutting/status')return send(res,200,cuttingStatus(db));
       if(req.method==='GET'&&path==='/api/cutting/template'){
