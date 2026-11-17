@@ -1,4 +1,5 @@
-﻿import{reportWorkbook}from'../lib/formats.mjs';
+import{heatsinkVendors}from'../public/heatsink.js';
+import{reportWorkbook}from'../lib/formats.mjs';
 import {test} from 'node:test';import assert from 'node:assert/strict';import XLSX from '../lib/vendor/sheetjs-0.20.3.cjs';import{parseHeatsink,parseHeatsinkInWorker}from'../lib/heatsink-workbook.mjs';import{openDatabase}from'../lib/db.mjs';import{importHeatsink,listHeatsink}from'../lib/heatsink-data.mjs';import{initHolding}from'../lib/holding.mjs';import{businessApi}from'../lib/offline-business.mjs';
 function fixture(bad=false){const w=XLSX.utils.book_new();for(const name of ['One','Two']){const s=XLSX.utils.aoa_to_sheet([['Model'],['Sub Heatsink','Code Heatsink','Code IC',null,'Description','Picture','Model'],['00123','HS-A','IC-1st','DIODE: IC-A','First',null,'MODEL-A'],[null,null,'IC-2nd','IC-B','Second'],[],[null,null,'IC-1st','IC-C','Missing source codes']]);s['!merges']=[{s:{r:1,c:2},e:{r:1,c:3}},{s:{r:2,c:0},e:{r:3,c:0}},{s:{r:2,c:1},e:{r:3,c:1}},{s:{r:2,c:6},e:{r:3,c:6}}];XLSX.utils.book_append_sheet(w,s,name);}if(bad)XLSX.utils.book_append_sheet(w,XLSX.utils.aoa_to_sheet([['Invalid']]),'Bad');return XLSX.write(w,{type:'buffer',bookType:'xlsx'});}
 test('all sheets, merged groups, multiline codes and incomplete source rows remain visible',async()=>{const p=await parseHeatsinkInWorker(fixture());assert.equal(p.sheets.length,2);assert.equal(p.groups.length,4);assert.equal(p.groups[0].sub_code,'00123');assert.equal(p.groups[0].parts.length,2);assert.equal(p.groups[0].parts[1].position,'IC-2nd');assert.equal(p.groups[1].sub_code,'');assert.throws(()=>parseHeatsink(fixture(true)),/Bad/);assert.throws(()=>parseHeatsink(Buffer.from('bad')));});
@@ -11,3 +12,8 @@ test('embedded drawing photo belongs to its source group and survives offline st
  const db=openDatabase(':memory:');try{importHeatsink(db,p,'photo.xlsx');const r=businessApi(db,{id:1,role:'viewer'},'/heatsink/image/'+p.images[0].id);assert.equal(r.mime,'image/png');assert.deepEqual(Buffer.from(r.bytes),image);}finally{db.close();}
 });
 
+
+test('IC vendors pair first and second arrows by source order, never invent mismatched alternatives',()=>{
+ const v=heatsinkVendors({code:'DIODE: IC-A\nDIODE: IC-B',description:'→ D15SB60, DACHANG\n→ GBJ1506, YANGJIE'});assert.equal(v.length,2);assert.deepEqual(v.map(v=>[v.vendor,v.code,v.description]),[[1,'DIODE: IC-A','D15SB60, DACHANG'],[2,'DIODE: IC-B','GBJ1506, YANGJIE']]);
+ assert.equal(heatsinkVendors({code:'ONE',description:'→ A → B'}),null);assert.equal(heatsinkVendors({code:'ONE',description:'Single vendor'})[0].vendor,1);
+});
