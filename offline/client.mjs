@@ -14,18 +14,20 @@ class OfflineClient{
   this.install();return this;
  }
  install(){
-  const strip=document.createElement('div');strip.id='device-offline-strip';strip.className='device-offline-strip';document.body.prepend(strip);this.paint();
+  const strip=document.createElement('div');strip.id='device-offline-strip';strip.className='device-offline-strip';document.body.prepend(strip);this.showStatusStrip();
+  document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible')this.showStatusStrip();});
   document.addEventListener('click',event=>{const a=event.target.closest('a');if(!a||!this.db||!this.meta.active)return;const url=new URL(a.href,location.href);if(url.origin!==location.origin||!url.pathname.startsWith('/api/'))return;if(/\/(?:export|report\.zip)(?:\/|$)|\/image(?:\/|$)/.test(url.pathname)){event.preventDefault();this.downloadResource(url.pathname.slice(4)+url.search).catch(error=>this.notify(message(error)));}},true);
   let scheduled=false;new MutationObserver(()=>{if(scheduled)return;scheduled=true;queueMicrotask(()=>{scheduled=false;this.localImages();});}).observe(document.body,{childList:true,subtree:true});
   window.addEventListener('online',()=>{this.online=true;this.paint();this.sync().then(()=>this.refreshIfDue()).catch(()=>{});});window.addEventListener('offline',()=>{this.online=false;this.paint();});
   this.timer=setInterval(()=>{if(document.visibilityState==='visible'&&this.meta.active&&navigator.onLine&&!this.conflict)this.sync().then(()=>this.refreshIfDue()).catch(()=>{});},15000);
   if(this.meta.active&&this.db)setTimeout(()=>this.probe().then(()=>this.sync()).then(()=>this.refreshIfDue()).catch(()=>{}),500);
  }
+ showStatusStrip(){clearTimeout(this.stripTimer);this.stripVisible=true;this.paint();this.stripTimer=setTimeout(()=>{this.stripVisible=false;this.paint();},30000);}
  pending(){return this.ops.filter(op=>!op.ack);}
  serial(fn){const next=this.chain.then(fn,fn);this.chain=next.catch(()=>{});return next;}
  async persist(){await change(['meta'],tx=>tx.objectStore('meta').put(this.meta,'active'));}
  notify(text){this.notice=text;this.paint();if(document.querySelector('#offline-message'))document.querySelector('#offline-message').textContent=text;}
- paint(){const strip=document.querySelector('#device-offline-strip');if(!strip)return;const count=this.pending().length;strip.dataset.waiting=String(count>0||!this.online);strip.dataset.error=String(!!this.conflict||!!this.replayError);strip.innerHTML=`<span>${!this.meta.active?'Work Area · Online + Offline':!this.db?'Chưa tải dữ liệu offline':this.online?'Dữ liệu trên máy':'Đang offline'}${count?' · '+count+' chờ đồng bộ':''}${this.conflict?' · Cần kiểm tra':''}</span><a href="#offline">Đồng bộ</a>`;}
+ paint(){const strip=document.querySelector('#device-offline-strip');if(!strip)return;strip.hidden=this.stripVisible===false;const count=this.pending().length;strip.dataset.waiting=String(count>0||!this.online);strip.dataset.error=String(!!this.conflict||!!this.replayError);strip.innerHTML=`<span>${!this.meta.active?'Work Area · Online + Offline':!this.db?'Chưa tải dữ liệu offline':this.online?'Dữ liệu trên máy':'Đang offline'}${count?' · '+count+' chờ đồng bộ':''}${this.conflict?' · Cần kiểm tra':''}</span><a href="#offline">Đồng bộ</a>`;}
  async remote(path,{method='GET',data,timeout=10000}={}){
   let response;try{response=await fetch('/api'+path,{method,credentials:'same-origin',headers:data?{'Content-Type':'application/json','X-CSRF-Token':this.csrf||''}:{},body:data?JSON.stringify(data):undefined,signal:AbortSignal.timeout(timeout)});}catch(error){this.online=false;this.nextAttempt=Date.now()+15000;this.paint();throw Object.assign(Error('Không kết nối được server. Dữ liệu vẫn giữ trên điện thoại.'),{network:true});}
   if(response.status>=500){this.online=false;this.nextAttempt=Date.now()+15000;this.paint();throw Object.assign(Error('Máy chủ đang gặp vấn đề. Dữ liệu vẫn giữ trên điện thoại.'),{network:true,status:response.status});}

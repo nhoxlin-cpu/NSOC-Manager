@@ -122,12 +122,14 @@ const shortLabels={home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt châ
 watchResults.connect((path,options)=>requestApi(path,options));
 function renderNavigation() {
   watchResults.setAccount(state.user);
+  const imports=$('#menu-mm-import');if(imports)imports.hidden=state.user?.role!=='admin';
   const keys=state.user ? state.navigation : defaultNavigation;
   $('.bottom-nav').innerHTML=keys.filter(key=>routes.some(r=>r[0]===key)).map(key=>{const route=routes.find(r=>r[0]===key);return `<a href="#${key}" data-nav="${key}" aria-label="${route[2]}" ${state.page===key?'class="active" aria-current="page"':''}>${icon(route[1])}<span>${shortLabels[key]}</span></a>`;}).join('');
 }
 $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#downloads">${icon('download')} T\u1ea3i xu\u1ed1ng & Sao l\u01b0u</a>`);
+$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="menu-mm-import" href="#mm?view=import" hidden>${icon('folder')} Nh\u1eadp file MM</a><a class="menu-link" id="menu-shortcuts" href="#account?shortcuts">${icon('settings')} Ph\u00edm t\u1eaft c\u1ee7a t\u00f4i</a>`);
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = () => el.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(el => el.addEventListener('click', e => { if (e.target === el) { const r = el.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) el.close(); } }));
@@ -142,7 +144,7 @@ async function home(id) {
       <div class="quality-flow workspace-flow"><span>${icon('scan')} QUÉT MÃ</span><i></i><span>${icon('check')} KIỂM TRA</span><i></i><strong>${icon('box')} QUẢN LÝ</strong></div><button id="quality-motion" class="quality-motion" aria-label="Tạm dừng chuyển động" aria-pressed="false"><span aria-hidden="true">Ⅱ</span></button>
     </section>
     <section class="home-functions"><div class="section-title"><h2>Chức năng làm việc</h2><span>Chọn để bắt đầu</span></div><div class="features home-feature-grid">
-      ${[['scan','scan','blue','Quét & thu thập dữ liệu','Barcode · Ảnh label · Excel'],['ckd','ckd','','Kiểm tra CKD','Đối chiếu hai nhãn'],['cut','cut','purple','Cắt chân linh kiện','Tra mã AI ↔ MI'],['holding','box','green','Holding room','Nhập · Xuất · Tồn kho'],['mm','search','cyan','Tra cứu MM','Vật tư & Location'],['account?shortcuts','user','sand','Phím tắt của tôi','Tùy chỉnh theo tài khoản']].map(([route,symbol,color,title,desc]) => `<a class="feature" href="#${route}">${icon('diagonal','class="feature-arrow"')}<div class="feature-icon ${color}">${icon(symbol)}</div><h3>${title}</h3><p>${desc}</p></a>`).join('')}
+      ${[['scan','scan','blue','Quét & thu thập dữ liệu','Barcode · Ảnh label · Excel'],['ckd','ckd','','Kiểm tra CKD','Đối chiếu hai nhãn'],['cut','cut','purple','Cắt chân linh kiện','Tra mã AI ↔ MI'],['holding','box','green','Holding room','Nhập · Xuất · Tồn kho'],['mm','search','cyan','Tra cứu MM','Vật tư & Location']].map(([route,symbol,color,title,desc]) => `<a class="feature" href="#${route}">${icon('diagonal','class="feature-arrow"')}<div class="feature-icon ${color}">${icon(symbol)}</div><h3>${title}</h3><p>${desc}</p></a>`).join('')}
     </div></section>
     <div class="stats">${[['scans','scan','Lượt quét'],['materials','search','Mã vật tư MM'],['boxes','ckd','Box đã xác nhận'],['holding','box','Vật tư trong Holding']].map(([key,symbol,label]) => `<div class="stat">${icon(symbol)}<div><strong id="stat-${key}">—</strong><span>${label}</span></div></div>`).join('')}</div>
     <div class="home-foot">${icon('shield')} ${state.user ? `Đã đăng nhập · ${escape(state.user.name)} · ${roleName(state.user.role)}` : 'Đăng nhập để xem dữ liệu và bắt đầu làm việc'}</div>`;
@@ -397,7 +399,7 @@ async function materials(id) {
   if(!view||(!Object.hasOwn(modes,view)&&view!=='import'&&view!=='codes')){
     const folders=[['location','Location','Tra cứu vị trí vật tư','teal'],['item_code','Item code','Tra cứu theo mã hàng','blue'],['spec','Spec','Tra cứu thông số, mô tả','violet']];
     folders.push(['codes','Danh s\u00e1ch code h\u00e0ng','Danh m\u1ee5c ITEM trong MM','teal']);
-    if(state.user.role==='admin')folders.push(['import','Nhập file','Thêm, cập nhật danh mục MM','amber']);
+
     $('#main').innerHTML=`${pageTop('Tra cứu MM','Chọn thư mục để tiếp tục')}<nav class="mm-folder-grid" aria-label="Các thư mục MM">${folders.map(([key,label,note,tone])=>`<a class="mm-folder ${tone}" href="#mm?view=${key}" data-mm-folder="${key}"><span class="mm-folder-icon">${icon('folder')}</span><h2>${label}</h2><p>${note}</p><span class="mm-folder-arrow">${icon('arrow')}</span></a>`).join('')}</nav>`;
     return;
   }
