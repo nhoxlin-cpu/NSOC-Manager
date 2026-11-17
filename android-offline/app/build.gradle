@@ -2,7 +2,7 @@ plugins { id 'com.android.application' }
 android {
  namespace 'vn.hansol.workarea.offline'
  compileSdk 36
- defaultConfig { applicationId 'vn.hansol.workarea.offline'; minSdk 26; targetSdk 36; versionCode 21; versionName '1.1.15' }
+ defaultConfig { applicationId 'vn.hansol.workarea.offline'; minSdk 26; targetSdk 36; versionCode 22; versionName '1.1.16' }
  signingConfigs {
   release {
    if(System.getenv('WORKAREA_KEYSTORE')) {
