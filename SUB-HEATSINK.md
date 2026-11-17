@@ -1,4 +1,4 @@
-﻿# List sub heatsink
+# List sub heatsink
 
 Open **List sub heatsink** from Home or the workspace menu. Search Sub Heatsink,
 Code Heatsink, IC, descriptions or Model; camera lookup reads a single code.
@@ -21,6 +21,8 @@ import to make that version (including photos) available without a connection.
 Import itself requires the server. No customer workbook or production data is
 bundled in the public source or APK.
 
-Phone 1.1.11 (version code 17) includes this screen. Automated browser/snapshot
+Phone 1.1.12 (version code 18) includes this screen. Automated browser/snapshot
 checks cover offline lookup; native installation/update prompts still require a
 physical Android device.
+
+Each IC position displays vendor alternatives in source order (first arrow = vendor 1, second arrow = vendor 2). Radio choices allow one vendor per IC for on-screen comparison, without modifying inventory or the source workbook. Mismatched code/description counts show the original text instead of guessing pairs. Embedded photos appear inline and open in a larger dialog, including downloaded offline photos.

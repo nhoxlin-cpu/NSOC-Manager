@@ -468,7 +468,7 @@ function assistant() {
 }
 async function heatsink(){
  if(!state.user){$('#main').innerHTML=needsLogin('List sub heatsink');return;}
- await renderHeatsink({api,state,escape,number,icon,button,pageTop,toast,openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}});
+ await renderHeatsink({api,state,escape,number,icon,button,pageTop,toast,detail,openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}});
 }
 async function cutting() {
   if(!state.user){$('#main').innerHTML=needsLogin('Cắt chân linh kiện');return;}
