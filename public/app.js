@@ -130,7 +130,7 @@ function renderNavigation() {
 $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#downloads">${icon('download')} T\u1ea3i xu\u1ed1ng & Sao l\u01b0u</a>`);
-$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="menu-mm-import" href="#mm?view=import" hidden>${icon('folder')} Nh\u1eadp file MM</a><a class="menu-link" id="menu-shortcuts" href="#account?shortcuts">${icon('settings')} Ph\u00edm t\u1eaft c\u1ee7a t\u00f4i</a>`);
+$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="menu-mm-import" href="#imports" hidden>${icon('folder')} Nhập file dữ liệu</a><a class="menu-link" id="menu-shortcuts" href="#account?shortcuts">${icon('settings')} Ph\u00edm t\u1eaft c\u1ee7a t\u00f4i</a>`);
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = () => el.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(el => el.addEventListener('click', e => { if (e.target === el) { const r = el.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) el.close(); } }));
@@ -466,6 +466,18 @@ function assistant() {
     ['shield','Tài khoản & quyền','Hai biểu tượng Tài khoản đều mở cùng trang đăng nhập hoặc hồ sơ. Quản trị viên cấp tài khoản; nhân viên được ghi nhận dữ liệu; tài khoản chỉ xem được tra cứu và xuất báo cáo.']
   ].map(([symbol,title,description]) => `<article class="help-card"><h3>${icon(symbol)}${title}</h3><p>${description}</p></article>`).join('')}</div><p class="muted mt">Đây là hướng dẫn sử dụng, chưa có chatbot AI được kết nối.</p>`;
 }
+function dataImports(){
+ if(!state.user){$('#main').innerHTML=needsLogin('Nhập file dữ liệu');return;}
+ if(state.user.role!=='admin'){$('#main').innerHTML=`${pageTop('Nhập file dữ liệu','')}<section class='panel'><p>Chỉ quản trị viên được nhập file dữ liệu.</p></section>`;return;}
+ const files=[['mm','Nhập MM','Danh mục vật tư dùng chung','#mm?view=import&import=mm','teal'],['so','Nhập SO','Đơn hàng kiểm tra CKD','#ckd?import=so','blue'],['stock','Nhập Stock','Bảng tra PBA32 / PMD32 cho Holding','#holding?import=stock','violet'],['heatsink','Nhập List sub heatsink','Excel nhiều sheet, kèm ảnh nhúng','#heatsink?import=file','teal'],['models','Nhập CKD model list','Danh sách model kiểm tra CKD','#ckd?import=models','blue'],['cutting','Nhập bảng AI / MI','Bảng quy đổi cho cắt chân linh kiện','#cut?import=file','violet']];
+ $('#main').innerHTML=`${pageTop('Nhập file dữ liệu','Chọn loại dữ liệu cần nhập')}<nav class='mm-folder-grid' id='data-import-list' aria-label='Loại file dữ liệu'>${files.map(([key,title,note,href,tone])=>`<a class='mm-folder ${tone}' data-import-kind='${key}' href='${href}'><span class='mm-folder-icon'>${icon('folder')}</span><h2>${title}</h2><p>${note}</p><span class='mm-folder-arrow'>${icon('arrow')}</span></a>`).join('')}</nav>`;
+}
+function openDataImport(page){
+ if(state.user?.role!=='admin')return;const kind=new URLSearchParams(location.hash.split('?')[1]||'').get('import');if(!kind)return;
+ const selectors={mm:'#mm-settings-details',holding:'#h-import-form',heatsink:'#heatsink-import-details',cut:'#cut-import-details',ckd:kind==='models'?'#ckd-model-file':'#ckd-file'};const target=$(selectors[page]||'#missing-import-target');if(!target)return;
+ for(let el=target;el&&el!==$('#main');el=el.parentElement)if(el.tagName==='DETAILS')el.open=true;
+ $('#main .page-top')?.insertAdjacentHTML('afterend',`<a class='button small' id='data-import-back' href='#imports'>← Nhập file dữ liệu</a>`);target.scrollIntoView({block:'center'});
+}
 async function heatsink(){
  if(!state.user){$('#main').innerHTML=needsLogin('List sub heatsink');return;}
  await renderHeatsink({api,state,escape,number,icon,button,pageTop,toast,detail,openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}});
@@ -507,9 +519,9 @@ async function render() {
   const id = ++renderId; const page = location.hash.slice(1).split('?')[0] || 'home'; state.page = page;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
-  document.title = `${routes.find(r => r[0] === page)?.[2] || 'Trang chủ'} · Work Area`;
-  try { await (route || home)(id); } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
+  const route = { imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
+  document.title = `${(page==='imports'?'Nhập file dữ liệu':routes.find(r => r[0] === page)?.[2]) || 'Trang chủ'} · Work Area`;
+  try { await (route || home)(id); if(id===renderId)openDataImport(page); } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }
 window.addEventListener('hashchange', () => { window.scrollTo(0,0); render(); });
 window.addEventListener('offline', () => { connection(false); toast('Thiết bị đã mất mạng. Kiểm tra hàng chờ trước khi đóng trình duyệt.'); });
