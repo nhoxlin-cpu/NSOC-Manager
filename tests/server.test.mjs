@@ -58,7 +58,7 @@ test('Stock bulk deletion is scoped, authorized and atomic; ITEM totals cover al
   assert.equal((await request(endpoint,admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
   const hs=Number(db.prepare("INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,'HS',1)").run(randomUUID(),'BULK-HS-KEEP').lastInsertRowid);
   assert.equal((await request(endpoint,admin,'POST',{mode:'Stock',ids:[ids[0],hs]})).status,409);assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(ids[0]));
-  assert.equal((await request(endpoint,admin,'POST',{mode:'Label',all:true,through_id:hs})).status,400);
+  assert.equal((await request(endpoint,admin,'POST',{mode:'Invalid',all:true,through_id:hs})).status,400);
   const deleted=await request(endpoint,admin,'POST',body);assert.equal(deleted.data.deleted,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM scan_stock WHERE scan_id IN (?,?)').get(...body.ids).n,0);
   const after=(await request('/api/scans?mode=Stock',admin)).data;assert.equal(after.stock_summary.find(r=>r.item_code===item).total_quantity,51.5);
   const newer=Number(insert.run(randomUUID(),'BULK-NEWER',7).lastInsertRowid);
@@ -459,6 +459,12 @@ test('Holding ITEM name comes from saved code directory even after current MM lo
  const batch=Number(db.prepare("INSERT INTO mm_imports(name,sheets,row_count) VALUES('Name test','[]',1)").run().lastInsertRowid);db.prepare('INSERT INTO mm_inventory(barcode,item_code,item_name,qty,vendor,lot_no,source_sheet,source_row,import_id) VALUES(?,?,?,?,?,?,?,?,?)').run('PERSIST-BARCODE','PERSIST-NAME','Current name',1,'Current vendor','Current lot','MM',1,batch);
  db.prepare("UPDATE mm_inventory SET maker='Current maker' WHERE barcode='PERSIST-BARCODE'").run();
  r=await request('/api/holding/v2/item-mm?code=PERSIST-BARCODE',inspector);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].vendor,'Current maker');
+});
+
+test('Label bulk deletion is admin-only, scoped and preserves newer labels and other modes',async()=>{
+ const add=db.prepare('INSERT INTO scans(request_id,user_id,barcode,mode) VALUES(?,?,?,?)');const a=Number(add.run(randomUUID(),1,'LABEL-DELETE-A','Label').lastInsertRowid),b=Number(add.run(randomUUID(),1,'LABEL-DELETE-B','Label').lastInsertRowid),hs=Number(add.run(randomUUID(),1,'KEEP-HS','HS').lastInsertRowid),stock=Number(add.run(randomUUID(),1,'KEEP-STOCK','Stock').lastInsertRowid);
+ const body={mode:'Label',all:true,through_id:b};assert.equal((await request('/api/scans/delete',viewer,'POST',body)).status,403);assert.equal((await request('/api/scans/delete',admin,'POST',body,{'X-CSRF-Token':'bad'})).status,403);
+ const newer=Number(add.run(randomUUID(),1,'NEWER-LABEL','Label').lastInsertRowid);assert.equal((await request('/api/scans/delete',admin,'POST',{mode:'Label',ids:[a,hs]})).status,409);assert(db.prepare('SELECT id FROM scans WHERE id=?').get(a));const r=await request('/api/scans/delete',admin,'POST',body);assert.equal(r.status,200);assert(!db.prepare('SELECT id FROM scans WHERE id=?').get(a));assert(!db.prepare('SELECT id FROM scans WHERE id=?').get(b));for(const id of [hs,stock,newer])assert(db.prepare('SELECT id FROM scans WHERE id=?').get(id));
 });
 
 test('password change invalidates all sessions and logout invalidates a session immediately', async () => {

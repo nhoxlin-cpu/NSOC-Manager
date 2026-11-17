@@ -412,7 +412,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if(req.method==='POST'&&path==='/api/scans/delete'){
         adminAccess(u);const b=await jsonBody(req);
-        if(!['HS','Stock'].includes(b.mode))fail(400,'Chọn lịch sử HS hoặc Stock cần xóa.');
+        if(!['HS','Stock','Label'].includes(b.mode))fail(400,'Chọn lịch sử HS, Stock hoặc Label cần xóa.');
         const removed=transaction(db,()=>{
           if(b.all===true){if(!Number.isSafeInteger(b.through_id)||b.through_id<1)fail(400,'Thiếu mốc lịch sử cần xóa.');return db.prepare('DELETE FROM scans WHERE mode=? AND id<=?').run(b.mode,b.through_id).changes;}
           if(!Array.isArray(b.ids)||!b.ids.length||b.ids.length>1000||b.ids.some(id=>!Number.isSafeInteger(id)||id<1))fail(400,'Chọn từ 1 đến 1.000 lượt quét.');

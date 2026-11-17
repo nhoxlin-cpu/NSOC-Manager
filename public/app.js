@@ -107,11 +107,13 @@ function values(form) { return Object.fromEntries(new FormData(form)); }
 function formAction(selector, handler) {
   const form = $(selector); if (!form) return;
   form.addEventListener('submit', async event => {
-    event.preventDefault(); const submit = $('button[type="submit"]', form); const message = $('.form-message', form);
+    event.preventDefault(); if(form.getAttribute('aria-busy')==='true')return; const submit = $('button[type="submit"]', form); const message = $('.form-message', form);
     if (submit) submit.disabled = true; if (message) message.textContent = '';
+    if(form.id==='login-form'){form.setAttribute('aria-busy','true');const waiting=document.createElement('div');waiting.id='login-waiting';waiting.className='login-waiting';waiting.setAttribute('role','status');waiting.innerHTML='<span class="login-wait-orbit" aria-hidden="true"><i></i><b>W</b></span><span>\u0110ang ki\u1ec3m tra t\u00e0i kho\u1ea3n\u2026</span>';submit.after(waiting);}
+
     try { await handler(values(form), form); }
     catch (e) { if (message) message.textContent = e.message; else toast(e.message); }
-    finally { if (submit) submit.disabled = form.dataset.singleProcessed==='true'; }
+    finally { if(form.id==='login-form'){form.removeAttribute('aria-busy');form.querySelector('#login-waiting')?.remove();}if (submit) submit.disabled = form.dataset.singleProcessed==='true'; }
   });
 }
 
@@ -272,7 +274,7 @@ async function loadScans(more = false) {
     $('#more-scans').hidden = !state.next;
     el.innerHTML = mode==='HS'?hsHistoryHTML(state.scans):state.scans.length ? `<div class="table-wrap"><table><thead><tr><th>STT</th><th>Người quét</th><th>Ảnh đối chiếu</th><th>Barcode / ITEM</th>${mode==='Stock'?'<th>Item NM</th><th>QTY</th><th>Maker / Vendor</th><th>Lot No</th>':''}<th>QR / Mã vạch</th>${state.user.role === 'admin' ? '<th>Thao tác</th>' : ''}</tr></thead><tbody>${state.scans.map((r,i) => `<tr><td>${number(i+1)}</td><td>${escape(r.scanner)}<small>${time(r.created_at)} · ${escape(r.mode)}</small></td><td>${r.has_image ? `<button class="icon-button" data-photo="${r.id}" aria-label="Xem ảnh label ${r.id}"><img class="table-thumb" src="/api/scans/${r.id}/image" alt="Ảnh label" loading="lazy"></button>` : `<span class="thumb-placeholder">${icon('photo')}</span>`}</td><td class="wrap">${escape(r.barcode)}<small>${r.item_code ? escape(r.item_code) : 'Chưa có ITEM trong MM'}</small></td>${mode==='Stock'?`<td class="wrap">${escape(r.item_name)||'—'}</td><td>${r.quantity==null?'—':number(r.quantity)}<small>${r.quantity_source==='MM'?'Từ MM':r.quantity_source==='barcode'?'Từ mã':''}</small></td><td>${escape(r.maker)||'—'}<small>${escape(r.vendor)}</small></td><td>${escape(r.lot_no)||'—'}</td>`:''}<td><button class="button small" data-text="${r.id}">QR / Mã vạch</button></td>${state.user.role === 'admin' ? `<td><button class="button danger small" data-delete="${r.id}">Xóa</button></td>` : ''}</tr>`).join('')}</tbody></table></div>` : empty('Chưa có lượt quét', 'Lượt quét đầu tiên sẽ xuất hiện tại đây.', 'scan');
     $('#stock-history-tools')?.remove();
-    if(mode==='Stock'||mode==='HS')stockHistoryTools(result,el,mode);
+    if(['Stock','HS','Label'].includes(mode))stockHistoryTools(result,el,mode);
     el.querySelectorAll('[data-photo]').forEach(b => b.onclick = () => detail('Ảnh label', `<img class="photo-full" src="/api/scans/${b.dataset.photo}/image" alt="Ảnh label đã lưu">`));
     el.querySelectorAll('[data-text]').forEach(b=>b.onclick=()=>showScanCode(state.scans.find(r=>r.id===Number(b.dataset.text))));
     el.querySelectorAll('[data-delete]').forEach(b => b.onclick = () => {
