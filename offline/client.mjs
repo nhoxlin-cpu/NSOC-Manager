@@ -65,7 +65,12 @@ class OfflineClient{
    if(navigator.onLine&&this.online&&!this.conflict&&!this.syncing&&Date.now()>=this.nextAttempt){let timer;await Promise.race([this.sync().catch(()=>{}),new Promise(resolve=>{timer=setTimeout(resolve,1200);})]);clearTimeout(timer);}
    return {...committed.result,...(committed.op.serverResult||{}),...(committed.result.id?{id:committed.result.id}:{}),offline:!committed.op.ack};
   }
-  if((path==='/users'||path==='/heatsink'||path.startsWith('/heatsink?'))&&verb==='GET'&&navigator.onLine&&this.online){try{if(!this.csrf)await this.probe();return await network();}catch(error){if(!error.network&&!(error.status>=500))throw error;}}
+  const heatsinkRead=verb==='GET'&&(path==='/heatsink'||path.startsWith('/heatsink?'));
+  if(heatsinkRead){
+   if(navigator.onLine&&this.online){try{if(!this.csrf)await this.probe();return await network();}catch(error){if(error.status===401){this.csrf=null;this.authNeeded=true;this.paint();}else if(!error.network&&!(error.status>=500))throw error;}}
+   return {...businessApi(this.db,this.meta.profile,path,options),source:'device',snapshot_at:this.meta.snapshotAt||null,auth_required:!!this.authNeeded};
+  }
+  if(path==='/users'&&verb==='GET'&&navigator.onLine&&this.online){try{if(!this.csrf)await this.probe();return await network();}catch(error){if(!error.network&&!(error.status>=500))throw error;}}
   try{return businessApi(this.db,this.meta.profile,path,options);}catch(error){if(error.status!==503)throw error;if(!navigator.onLine)throw error;if(!this.csrf)await this.probe();const result=await network();if(path==='/password'){const salt=[...crypto.getRandomValues(new Uint8Array(16))];this.meta.verifier={salt,hash:await this.verifier(options.data.password,salt)};this.meta.active=false;this.csrf=null;await this.persist();}if(verb!=='GET')this.notice='Dữ liệu server đã thay đổi. Vào Đồng bộ để tải bản mới sau khi gửi hết hàng chờ.';return result;}
  }
  prepareBody(path,value){const b=structuredClone(value);
