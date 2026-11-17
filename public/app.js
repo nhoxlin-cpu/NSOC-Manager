@@ -131,6 +131,7 @@ $('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="m
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#downloads">${icon('download')} T\u1ea3i xu\u1ed1ng & Sao l\u01b0u</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="menu-mm-import" href="#imports" hidden>${icon('folder')} Nhập file dữ liệu</a><a class="menu-link" id="menu-shortcuts" href="#account?shortcuts">${icon('settings')} Ph\u00edm t\u1eaft c\u1ee7a t\u00f4i</a>`);
+$('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="menu-reports" href="#reports">${icon('download')} Xuất báo cáo</a>`);
 $('#open-menu').onclick = () => $('#menu-dialog').showModal();
 document.querySelectorAll('[data-close]').forEach(el => el.onclick = () => el.closest('dialog').close());
 document.querySelectorAll('dialog').forEach(el => el.addEventListener('click', e => { if (e.target === el) { const r = el.getBoundingClientRect(); if (e.clientX < r.left || e.clientX > r.right || e.clientY < r.top || e.clientY > r.bottom) el.close(); } }));
@@ -466,6 +467,17 @@ function assistant() {
     ['shield','Tài khoản & quyền','Hai biểu tượng Tài khoản đều mở cùng trang đăng nhập hoặc hồ sơ. Quản trị viên cấp tài khoản; nhân viên được ghi nhận dữ liệu; tài khoản chỉ xem được tra cứu và xuất báo cáo.']
   ].map(([symbol,title,description]) => `<article class="help-card"><h3>${icon(symbol)}${title}</h3><p>${description}</p></article>`).join('')}</div><p class="muted mt">Đây là hướng dẫn sử dụng, chưa có chatbot AI được kết nối.</p>`;
 }
+function reportHub(){
+ if(!state.user){$('#main').innerHTML=needsLogin('Xuất báo cáo');return;}
+ const reports=[['hs','Báo cáo HS','Lịch sử quét HS và ảnh đối chiếu','#scan?report=HS','teal'],['stock','Báo cáo Stock','Lượt quét Stock, QTY và ảnh đối chiếu','#scan?report=Stock','blue'],['label','Báo cáo Label','Lịch sử quét Label và ảnh đối chiếu','#scan?report=Label','violet'],['ckd','Báo cáo CKD · Excel','Chọn đơn hiện tại hoặc tất cả đơn','#ckd?report=excel','teal'],['ckd-photos','Báo cáo CKD · ZIP + ảnh','Báo cáo kèm các ảnh gốc','#ckd?report=zip','blue'],['holding','Báo cáo Holding','Tổng ITEM, box tồn và nhật ký theo bộ lọc','#holding?report=holding','violet']];
+ $('#main').innerHTML=`${pageTop('Xuất báo cáo','Chọn báo cáo cần xuất')}<nav class='mm-folder-grid' id='report-list' aria-label='Các báo cáo'>${reports.map(([key,title,note,href,tone])=>`<a class='mm-folder ${tone}' data-report-kind='${key}' href='${href}'><span class='mm-folder-icon'>${icon('download')}</span><h2>${title}</h2><p>${note}</p><span class='mm-folder-arrow'>${icon('arrow')}</span></a>`).join('')}</nav>`;
+}
+function openDataReport(page){
+ if(!state.user)return;const kind=new URLSearchParams(location.hash.split('?')[1]||'').get('report');if(!kind)return;
+ if(page==='holding'&&kind==='holding')$('#h-tab-stock')?.click();
+ const target=page==='scan'&&['HS','Stock','Label'].includes(kind)?$('#scan-export'):page==='ckd'&&['excel','zip'].includes(kind)?$(kind==='zip'?'#ckd-report-zip':'#ckd-export'):page==='holding'&&kind==='holding'?$('#h-export'):null;if(!target)return;
+ $('#main .page-top')?.insertAdjacentHTML('afterend',`<a class='button small' id='report-back' href='#reports'>← Xuất báo cáo</a>`);target.scrollIntoView({block:'center'});target.focus({preventScroll:true});
+}
 function dataImports(){
  if(!state.user){$('#main').innerHTML=needsLogin('Nhập file dữ liệu');return;}
  if(state.user.role!=='admin'){$('#main').innerHTML=`${pageTop('Nhập file dữ liệu','')}<section class='panel'><p>Chỉ quản trị viên được nhập file dữ liệu.</p></section>`;return;}
@@ -517,11 +529,12 @@ async function renderHubBackup(){
 
 async function render() {
   const id = ++renderId; const page = location.hash.slice(1).split('?')[0] || 'home'; state.page = page;
+  const reportMode=new URLSearchParams(location.hash.split('?')[1]||'').get('report');if(page==='scan'&&['HS','Stock','Label'].includes(reportMode))state.mode=reportMode;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
-  document.title = `${(page==='imports'?'Nhập file dữ liệu':routes.find(r => r[0] === page)?.[2]) || 'Trang chủ'} · Work Area`;
-  try { await (route || home)(id); if(id===renderId)openDataImport(page); } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
+  const route = { reports:reportHub,imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
+  document.title = `${(page==='imports'?'Nhập file dữ liệu':page==='reports'?'Xuất báo cáo':routes.find(r => r[0] === page)?.[2]) || 'Trang chủ'} · Work Area`;
+  try { await (route || home)(id); if(id===renderId){openDataImport(page);openDataReport(page);} } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }
 window.addEventListener('hashchange', () => { window.scrollTo(0,0); render(); });
 window.addEventListener('offline', () => { connection(false); toast('Thiết bị đã mất mạng. Kiểm tra hàng chờ trước khi đóng trình duyệt.'); });
