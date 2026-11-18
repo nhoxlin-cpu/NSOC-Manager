@@ -30,6 +30,7 @@ import { parseCuttingInWorker } from './lib/cutting-workbook.mjs';
 import { cuttingStatus,importCutting,lookupCutting,saveCuttingScan } from './lib/cutting-data.mjs';
 import {deleteHolding,initHolding,holdingReference,importHolding,holdingLookup,holdingPreferences,receiveHolding,withdrawHolding,editHolding,editHoldingGroup,holdingInventory,holdingEvents,holdingReport} from './lib/holding.mjs';
 
+const onlineRegistrationRoutes=new Set(['/register','/register.html','/registration-page.js','/registration-page.css']);
 const publicDir = fileURLToPath(new URL('./public/', import.meta.url));
 class HttpError extends Error { constructor(status, message) { super(message); this.status = status; } }
 const fail = (status, message) => { throw new HttpError(status, message); };
@@ -103,7 +104,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const url = new URL(req.url, 'http://localhost'), path = url.pathname;
       if (!path.startsWith('/api/')) {
         const webPath=path==='/'?'index.html':path.slice(1);
-        if(webFiles.has(webPath)){
+        if(webFiles.has(webPath)&&!onlineRegistrationRoutes.has(path)){
           if(!['GET','HEAD'].includes(req.method))fail(405,'Method not allowed');
           const ext=webPath.split('.').at(-1),mime={html:'text/html; charset=utf-8',js:'text/javascript; charset=utf-8',css:'text/css; charset=utf-8',json:'application/json',webmanifest:'application/manifest+json',wasm:'application/wasm',svg:'image/svg+xml',txt:'text/plain; charset=utf-8'}[ext]||'application/octet-stream';
           const content=await readFile(resolve(webDirectory,webPath));res.writeHead(200,{'Content-Type':mime,'Content-Length':content.length,'Cache-Control':'no-cache',...(webPath==='sw.js'?{'Service-Worker-Allowed':'/'}:{})});return res.end(req.method==='HEAD'?undefined:content);
@@ -114,11 +115,11 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
           res.writeHead(200,{'Content-Type':'application/vnd.android.package-archive','Content-Disposition':'attachment; filename="'+filename+'"','Content-Length':buffer.length,'Cache-Control':'no-cache'});
           return res.end(req.method==='HEAD'?undefined:buffer);
         }
-        const files = { '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
+        const files = { '/register':['register.html','text/html'],'/register.html':['register.html','text/html'],'/registration-page.js':['registration-page.js','text/javascript'],'/registration-page.css':['registration-page.css','text/css'], '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
         Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/heatsink.js':['heatsink.js','text/javascript'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/app-updates.js':['app-updates.js','text/javascript'],'/watch-results.js':['watch-results.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
-        res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : 'no-cache' });
+        res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : onlineRegistrationRoutes.has(path)?'no-store':'no-cache' });
         return res.end(req.method === 'HEAD' ? undefined : buffer);
       }
       res.setHeader('Cache-Control', 'no-store');
