@@ -93,3 +93,13 @@
 @media(max-width:360px){.quality-workspace{padding:18px 16px 44px;min-height:260px}.quality-workspace .quality-welcome h1{font-size:23px}.quality-workspace .quality-copy h2{font-size:17px}.quality-workspace .quality-art{width:38%}.quality-workspace .quality-core{width:70px;height:86px}.quality-workspace .workspace-flow{left:16px}}
 
 .signup-entry{margin:18px 0 22px}
+
+/* Startup mark remains visible while the workspace initializes. */
+.startup-loading{display:grid;justify-items:center;align-content:center;gap:18px;min-height:320px;padding:32px 20px}
+.startup-badge{position:relative;display:grid;place-items:center;width:112px;height:112px}
+.startup-orbit{position:absolute;inset:0;border:3px solid #dae8f8;border-top-color:#245bea;border-right-color:#35bcac;border-radius:50%;animation:startup-turn 1.25s linear infinite}
+.startup-logo{display:block;width:72px;height:72px;border-radius:19px;box-shadow:0 8px 22px #12314324;animation:startup-breathe 1.8s ease-in-out infinite}
+.startup-name{font-size:12px;font-weight:750;letter-spacing:3px;color:#31596f}
+.startup-dots{display:flex;gap:7px}.startup-dots i{display:block;width:6px;height:6px;border-radius:50%;background:#219ca0;animation:startup-pulse 1.2s ease-in-out infinite}.startup-dots i:nth-child(2){animation-delay:.15s}.startup-dots i:nth-child(3){animation-delay:.3s}
+@keyframes startup-turn{to{transform:rotate(360deg)}}@keyframes startup-breathe{0%,100%{transform:translateY(2px) scale(.96)}50%{transform:translateY(-2px) scale(1.03)}}@keyframes startup-pulse{0%,100%{opacity:.3;transform:scale(.8)}50%{opacity:1;transform:scale(1.1)}}
+@media(prefers-reduced-motion:reduce){.startup-loading *{animation:none!important}}

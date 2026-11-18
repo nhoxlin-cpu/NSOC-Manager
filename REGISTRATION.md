@@ -13,3 +13,5 @@ Bấm **Lưu chế độ duyệt** để áp dụng cho các đăng ký tiếp t
 Quyết định duyệt lưu người thực hiện và thời gian. Đăng ký, đổi chế độ và duyệt tài khoản không được xếp hàng offline. Bản dữ liệu offline không chứa danh sách chờ hay nhật ký duyệt. Thiết lập admin đầu tiên vẫn thuộc quy trình cài server, không qua tự đăng ký.
 
 Đường dẫn đăng ký web trực tiếp: **https://work-area.odermenu.duckdns.org/register**. Trang này lấy mới từ server, không dùng bộ giao diện offline đã lưu; có thể mở khi trang chính vẫn đang hiện bản cũ. Nó dùng cùng API và chế độ duyệt, không xóa dữ liệu trên máy hay tự chuyển tài khoản.
+
+Mật khẩu mới có thể từ 4 đến 128 ký tự, bao gồm mật khẩu chỉ có 4 chữ số. Mật khẩu hiện có không bị đổi. Quy tắc này dùng chung cho đăng ký, admin cấp tài khoản và đổi mật khẩu.
