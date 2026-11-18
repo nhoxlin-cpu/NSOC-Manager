@@ -21,7 +21,7 @@ import to make that version (including photos) available without a connection.
 Import itself requires the server. No customer workbook or production data is
 bundled in the public source or APK.
 
-Phone 1.1.16 (version code 22) includes this screen. Automated browser/snapshot
+Phone 1.1.20 (version code 26) includes this screen. Automated browser/snapshot
 checks cover offline lookup; native installation/update prompts still require a
 physical Android device.
 
@@ -29,4 +29,4 @@ Each IC position displays vendor alternatives in source order (first arrow = ven
 
 Search results show unique Sub Heatsink codes only. Changing Model immediately filters results; select a code to open only its matching source groups, IC choices and photos. Return to the list without losing the filter. Exact-code details and counts work in downloaded offline snapshots too.
 
-Administrators can use the prominent **Tải file Excel lên** button at the top of the directory to select the original XLSX (up to 200 MB), then confirm with **Nhập danh sách**. The selected filename/size appears before upload. All sheets and embedded photos follow the existing atomic importer.
+Administrators use **Nhập file dữ liệu → Nhập List sub heatsink** to select the original XLSX (up to 200 MB), then confirm with **Nhập danh sách**. Upload controls are absent from the normal lookup page. The selected filename/size appears before upload. All sheets and embedded photos follow the existing atomic importer.
