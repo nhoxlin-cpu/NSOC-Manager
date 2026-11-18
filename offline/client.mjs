@@ -5,7 +5,7 @@ import {zipSync} from 'fflate';
 const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 const message=error=>error?.message||'Chưa kết nối được máy chủ.';
 const fail=(text,status=400)=>{throw Object.assign(Error(text),{status});};
-const names={'/scans':'Quét mã','/scans/delete':'Xóa lịch sử','/ckd/pair/save':'Check CKD','/ckd/history/delete':'Xóa CKD','/holding/v2/receive':'Nhập Holding','/holding/v2/withdraw':'Xuất Holding','/holding/v2/edit':'Sửa Holding','/holding/v2/edit-group':'Sửa nhóm ITEM','/holding/v2/delete':'Xóa khỏi Holding','/cutting/scans':'Cắt chân','/materials/lookup':'Lưu tra cứu MM','/preferences':'Phím tắt','/holding/v2/preferences':'Location Holding'};
+const names={'/sorting/records':'Sorting vendor','/scans':'Quét mã','/scans/delete':'Xóa lịch sử','/ckd/pair/save':'Check CKD','/ckd/history/delete':'Xóa CKD','/holding/v2/receive':'Nhập Holding','/holding/v2/withdraw':'Xuất Holding','/holding/v2/edit':'Sửa Holding','/holding/v2/edit-group':'Sửa nhóm ITEM','/holding/v2/delete':'Xóa khỏi Holding','/cutting/scans':'Cắt chân','/materials/lookup':'Lưu tra cứu MM','/preferences':'Phím tắt','/holding/v2/preferences':'Location Holding'};
 class OfflineClient{
  constructor(){this.enabled=true;this.meta={active:false,maps:{}};this.ops=[];this.db=null;this.online=navigator.onLine;this.csrf=null;this.notice='';this.chain=Promise.resolve();this.images=new Map();this.generation=0;this.nextAttempt=0;}
  async ready(){
@@ -83,7 +83,7 @@ class OfflineClient{
  }
  apply(op){const result=businessApi(this.db,op.actor||this.meta.profile,op.path,{method:'POST',data:op.body});this.preserveIds(op,result);stampOfflineTime(this.db,op.path,op.body,result,op.at,(op.actor||this.meta.profile).id);return result;}
  preserveIds(op,result){
-  const table={'/scans':'scans','/ckd/pair/save':'ckd_checks','/holding/v2/receive':'holding_entries','/cutting/scans':'cutting_scans','/materials/lookup':'mm_lookup_saved'}[op.path],key=op.path==='/materials/lookup'?'saved_id':'id',wanted=op.localResult?.[key],actual=result[key];if(!table||!wanted||!actual||wanted===actual)return;
+  const table={'/sorting/records':'sorting_records','/scans':'scans','/ckd/pair/save':'ckd_checks','/holding/v2/receive':'holding_entries','/cutting/scans':'cutting_scans','/materials/lookup':'mm_lookup_saved'}[op.path],key=op.path==='/materials/lookup'?'saved_id':'id',wanted=op.localResult?.[key],actual=result[key];if(!table||!wanted||!actual||wanted===actual)return;
   this.db.exec('SAVEPOINT stable_device_ids; PRAGMA defer_foreign_keys=ON');try{this.db.prepare('UPDATE '+table+' SET id=? WHERE id=?').run(wanted,actual);if(table==='scans')this.db.prepare('UPDATE scan_stock SET scan_id=? WHERE scan_id=?').run(wanted,actual);if(table==='ckd_checks')this.db.prepare('UPDATE ckd_check_images SET check_id=? WHERE check_id=?').run(wanted,actual);if(table==='holding_entries'){this.db.prepare("UPDATE holding_events SET entry_id=?,response=json_set(response,'$.id',?) WHERE entry_id=?").run(wanted,wanted,actual);}this.db.exec('RELEASE SAVEPOINT stable_device_ids');result[key]=wanted;}catch(error){this.db.exec('ROLLBACK TO SAVEPOINT stable_device_ids; RELEASE SAVEPOINT stable_device_ids');throw error;}
  }
  async commit(path,value){
@@ -106,7 +106,7 @@ class OfflineClient{
    while(this.pending().length){const op=this.pending()[0];
     const receipt=await this.remote('/offline/replay',{method:'POST',data:{request_id:op.id,path:op.path,body:this.wire(op),captured_at:op.at,realm:op.realm||this.meta.realm},timeout:15000});
     if(!receipt.result||receipt.request_id!==op.id)throw Object.assign(Error('Chưa nhận được xác nhận đồng bộ đầy đủ.'),{network:true});
-    await this.serial(async()=>{op.ack=true;op.serverResult=receipt.result;op.error=null;const entity={'/scans':'scan','/ckd/pair/save':'ckd','/holding/v2/receive':'holding','/cutting/scans':'cut'}[op.path];if(entity&&op.localResult.id&&receipt.result.id){this.meta.maps??={};this.meta.maps[entity+':'+op.localResult.id]=receipt.result.id;}this.meta.lastUpload=new Date().toISOString();await change(['meta','ops'],tx=>{tx.objectStore('ops').put(op);tx.objectStore('meta').put(this.meta,'active');});this.applyReceipt(op);this.paint();});
+    await this.serial(async()=>{op.ack=true;op.serverResult=receipt.result;op.error=null;const entity={'/sorting/records':'sorting','/scans':'scan','/ckd/pair/save':'ckd','/holding/v2/receive':'holding','/cutting/scans':'cut'}[op.path];if(entity&&op.localResult.id&&receipt.result.id){this.meta.maps??={};this.meta.maps[entity+':'+op.localResult.id]=receipt.result.id;}this.meta.lastUpload=new Date().toISOString();await change(['meta','ops'],tx=>{tx.objectStore('ops').put(op);tx.objectStore('meta').put(this.meta,'active');});this.applyReceipt(op);this.paint();});
    }
    this.conflict=null;this.notice=this.pending().length?'Còn lượt chờ đồng bộ.':'Đã gửi hết hàng chờ lên server.';
   }catch(error){if(error.status===401||error.status===403){this.csrf=null;this.authNeeded=true;}if(!error.network){const op=this.pending()[0];if(op){op.error=message(error);await change(['ops'],tx=>tx.objectStore('ops').put(op));}this.conflict=message(error);}this.notice=message(error);throw error;}finally{this.paint();this.syncing=null;}})();return this.syncing;
