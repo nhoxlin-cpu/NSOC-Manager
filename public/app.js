@@ -504,7 +504,7 @@ function openDataImport(page){
  for(let el=target;el&&el!==$('#main');el=el.parentElement)if(el.tagName==='DETAILS')el.open=true;
  $('#main .page-top')?.insertAdjacentHTML('afterend',`<a class='button small' id='data-import-back' href='#imports'>← Nhập file dữ liệu</a>`);target.scrollIntoView({block:'center'});
 }
-async function sorting(){if(!state.user){$('#main').innerHTML=needsLogin('Sorting vendor');return;}await renderSorting({api,state,escape,number,time,icon,field,pageTop,canWrite,toast});}
+async function sorting(){if(!state.user){$('#main').innerHTML=needsLogin('Sorting vendor');return;}await renderSorting({api,state,escape,number,time,icon,field,pageTop,canWrite,toast,detail});}
 async function heatsink(){
  if(!state.user){$('#main').innerHTML=needsLogin('List sub heatsink');return;}
  await renderHeatsink({api,state,escape,number,icon,button,pageTop,toast,detail,openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}});

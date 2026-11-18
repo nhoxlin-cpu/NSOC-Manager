@@ -1,4 +1,4 @@
-import {saveSorting,listSorting,sortingReport} from './lib/sorting.mjs';
+import {saveSorting,listSorting,sortingReport,sortingImage} from './lib/sorting.mjs';
 import {registrationMode,setRegistrationMode,registerEmployee,pendingRegistrations,reviewRegistration} from './lib/registration.mjs';
 import {listHeatsink,importHeatsink} from './lib/heatsink-data.mjs';
 import {parseHeatsinkInWorker} from './lib/heatsink-workbook.mjs';
@@ -318,8 +318,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
+      const sortingPhoto=/^\/api\/sorting\/image\/([a-zA-Z0-9-]{16,80})$/.exec(path);if(req.method==='GET'&&sortingPhoto){const photo=sortingImage(db,sortingPhoto[1]);res.writeHead(200,{'Content-Type':photo.mime,'Cache-Control':'private, no-store'});res.end(photo.bytes);return;}
       if(req.method==='GET'&&path==='/api/sorting/records')return send(res,200,listSorting(db,Object.fromEntries(url.searchParams)));
-      if(req.method==='POST'&&path==='/api/sorting/records'){writeAccess(u);return send(res,201,saveSorting(db,await jsonBody(req,16384),u.id));}
+      if(req.method==='POST'&&path==='/api/sorting/records'){writeAccess(u);return send(res,201,saveSorting(db,await jsonBody(req,4400000),u.id));}
       if(req.method==='GET'&&path==='/api/sorting/export'){const bytes=sortingReport(db,Object.fromEntries(url.searchParams),u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="Sorting-YUWON.xlsx"'});res.end(bytes);return;}
       if(req.method==='GET'&&path==='/api/heatsink')return send(res,200,listHeatsink(db,Object.fromEntries(url.searchParams)));
       const heatsinkImage=/^\/api\/heatsink\/image\/([a-f0-9]{64})$/.exec(path);
