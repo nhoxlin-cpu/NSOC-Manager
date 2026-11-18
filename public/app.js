@@ -543,6 +543,21 @@ async function renderHubBackup(){
   }catch(error){if(panel.isConnected)panel.innerHTML=`<p role="alert">${escape(error.message)}</p><button class="button" id="backup-retry">Thử lại</button>`;$('#backup-retry')?.addEventListener('click',renderHubBackup);}
 }
 
+function installColumnOrderControls(){
+  document.querySelectorAll('#main .table-wrap table').forEach((table,index)=>{
+    if(table.dataset.columnOrderReady)return;
+    const headers=[...table.querySelectorAll(':scope > thead > tr:first-child > th')];
+    if(headers.length<2)return;
+    table.dataset.columnOrderReady='true';
+    const key='wa-column-order:'+location.hash.split('?')[0]+':'+(table.className||'table')+':'+index;
+    const button=document.createElement('button');button.type='button';button.className='button small column-order-button';button.textContent='Đổi thứ tự cột';
+    table.parentElement.parentElement.insertBefore(button,table.parentElement);
+    const apply=order=>{const rows=[...table.rows];rows.forEach(row=>{const cells=[...row.children];order.forEach(i=>{if(cells[i])row.appendChild(cells[i]);});});};
+    let saved=[];try{saved=JSON.parse(localStorage.getItem(key)||'[]');}catch{}
+    if(saved.length===headers.length&&saved.every(i=>Number.isInteger(i)&&i>=0&&i<headers.length))apply(saved);
+    button.onclick=()=>{const names=[...table.querySelectorAll(':scope > thead > tr:first-child > th')].map((h,i)=>`${i+1}. ${h.textContent.trim()}`);const raw=prompt('Nhập số thứ tự cột, cách nhau bằng dấu phẩy. Ví dụ: 2,1,3,4\n\n'+names.join('\n'));if(raw===null)return;const order=raw.split(',').map(v=>Number(v.trim())-1),valid=order.length===headers.length&&new Set(order).size===headers.length&&order.every(i=>i>=0&&i<headers.length);if(!valid){toast('Thứ tự cột không hợp lệ.');return;}apply(order);try{localStorage.setItem(key,JSON.stringify(order));}catch{}};
+  });
+}
 async function render() {
   const id = ++renderId; const page = location.hash.slice(1).split('?')[0] || 'home'; state.page = page;
   const reportMode=new URLSearchParams(location.hash.split('?')[1]||'').get('report');if(page==='scan'&&['HS','Stock','Label'].includes(reportMode))state.mode=reportMode;
@@ -550,7 +565,7 @@ async function render() {
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
   const route = { sorting,reports:reportHub,imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
   document.title = `${(page==='imports'?'Nhập file dữ liệu':page==='reports'?'Xuất báo cáo':routes.find(r => r[0] === page)?.[2]) || 'Trang chủ'} · Work Area`;
-  try { await (route || home)(id); if(id===renderId){openDataImport(page);openDataReport(page);} } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
+  try { await (route || home)(id); if(id===renderId){openDataImport(page);openDataReport(page);installColumnOrderControls();} } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }
 window.addEventListener('hashchange', () => { window.scrollTo(0,0); render(); });
 window.addEventListener('offline', () => { connection(false); toast('Thiết bị đã mất mạng. Kiểm tra hàng chờ trước khi đóng trình duyệt.'); });
