@@ -1,3 +1,4 @@
+import {renderSorting} from '/sorting.js';
 import {renderHeatsink} from '/heatsink.js';
 import {renderAppUpdate} from '/app-updates.js';
 import {watchResults} from '/watch-results.js?v=20261115-46';
@@ -118,8 +119,8 @@ function formAction(selector, handler) {
   });
 }
 
-const routes = [['home', 'home', 'Trang chủ'], ['scan', 'scan', 'Quét mã'], ['ckd', 'ckd', 'Kiểm tra CKD'], ['cut', 'cut', 'Cắt chân linh kiện'], ['holding', 'box', 'Holding room'], ['mm', 'search', 'Tra cứu MM'], ['heatsink','box','List sub heatsink'], ['assistant', 'assistant', 'Trợ lý'], ['account', 'user', 'Tài khoản']];
-const shortLabels={heatsink:'Sub heatsink',home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt chân',holding:'Holding',mm:'Tra MM',assistant:'Trợ lý',account:'Tài khoản'};
+const routes = [['home', 'home', 'Trang chủ'], ['scan', 'scan', 'Quét mã'], ['ckd', 'ckd', 'Kiểm tra CKD'], ['cut', 'cut', 'Cắt chân linh kiện'], ['holding', 'box', 'Holding room'], ['mm', 'search', 'Tra cứu MM'], ['heatsink','box','List sub heatsink'], ['sorting','ckd','Sorting vendor'], ['assistant', 'assistant', 'Trợ lý'], ['account', 'user', 'Tài khoản']];
+const shortLabels={sorting:'Sorting',heatsink:'Sub heatsink',home:'Trang chủ',scan:'Quét mã',ckd:'CKD',cut:'Cắt chân',holding:'Holding',mm:'Tra MM',assistant:'Trợ lý',account:'Tài khoản'};
 watchResults.connect((path,options)=>requestApi(path,options));
 function renderNavigation() {
   watchResults.setAccount(state.user);
@@ -146,7 +147,7 @@ async function home(id) {
       <div class="quality-flow workspace-flow"><span>${icon('scan')} QUÉT MÃ</span><i></i><span>${icon('check')} KIỂM TRA</span><i></i><strong>${icon('box')} QUẢN LÝ</strong></div><button id="quality-motion" class="quality-motion" aria-label="Tạm dừng chuyển động" aria-pressed="false"><span aria-hidden="true">Ⅱ</span></button>
     </section>
     <section class="home-functions"><div class="section-title"><h2>Chức năng làm việc</h2><span>Chọn để bắt đầu</span></div><div class="features home-feature-grid">
-      ${[['scan','scan','blue','Quét & thu thập dữ liệu','Barcode · Ảnh label · Excel'],['ckd','ckd','','Kiểm tra CKD','Đối chiếu hai nhãn'],['cut','cut','purple','Cắt chân linh kiện','Tra mã AI ↔ MI'],['holding','box','green','Holding room','Nhập · Xuất · Tồn kho'],['mm','search','cyan','Tra cứu MM','Vật tư & Location'],['heatsink','box','green','List sub heatsink','Sub · Heatsink · IC · Model']].map(([route,symbol,color,title,desc]) => `<a class="feature" href="#${route}">${icon('diagonal','class="feature-arrow"')}<div class="feature-icon ${color}">${icon(symbol)}</div><h3>${title}</h3><p>${desc}</p></a>`).join('')}
+      ${[['scan','scan','blue','Quét & thu thập dữ liệu','Barcode · Ảnh label · Excel'],['ckd','ckd','','Kiểm tra CKD','Đối chiếu hai nhãn'],['cut','cut','purple','Cắt chân linh kiện','Tra mã AI ↔ MI'],['holding','box','green','Holding room','Nhập · Xuất · Tồn kho'],['mm','search','cyan','Tra cứu MM','Vật tư & Location'],['heatsink','box','green','List sub heatsink','Sub · Heatsink · IC · Model'],['sorting','ckd','purple','Sorting vendor','YUWON · Kết quả sort · Báo cáo']].map(([route,symbol,color,title,desc]) => `<a class="feature" href="#${route}">${icon('diagonal','class="feature-arrow"')}<div class="feature-icon ${color}">${icon(symbol)}</div><h3>${title}</h3><p>${desc}</p></a>`).join('')}
     </div></section>
     <div class="stats">${[['scans','scan','Lượt quét'],['materials','search','Mã vật tư MM'],['boxes','ckd','Box đã xác nhận'],['holding','box','Vật tư trong Holding']].map(([key,symbol,label]) => `<div class="stat">${icon(symbol)}<div><strong id="stat-${key}">—</strong><span>${label}</span></div></div>`).join('')}</div>
     <div class="home-foot">${icon('shield')} ${state.user ? `Đã đăng nhập · ${escape(state.user.name)} · ${roleName(state.user.role)}` : 'Đăng nhập để xem dữ liệu và bắt đầu làm việc'}</div>`;
@@ -482,13 +483,13 @@ function assistant() {
 }
 function reportHub(){
  if(!state.user){$('#main').innerHTML=needsLogin('Xuất báo cáo');return;}
- const reports=[['hs','Báo cáo HS','Lịch sử quét HS và ảnh đối chiếu','#scan?report=HS','teal'],['stock','Báo cáo Stock','Lượt quét Stock, QTY và ảnh đối chiếu','#scan?report=Stock','blue'],['label','Báo cáo Label','Lịch sử quét Label và ảnh đối chiếu','#scan?report=Label','violet'],['ckd','Báo cáo CKD · Excel','Chọn đơn hiện tại hoặc tất cả đơn','#ckd?report=excel','teal'],['ckd-photos','Báo cáo CKD · ZIP + ảnh','Báo cáo kèm các ảnh gốc','#ckd?report=zip','blue'],['holding','Báo cáo Holding','Tổng ITEM, box tồn và nhật ký theo bộ lọc','#holding?report=holding','violet']];
+ const reports=[['sorting','Báo cáo Sorting vendor','Kết quả sort YUWON, NG, OK và tỷ lệ lỗi','#sorting?report=vendor','violet'],['hs','Báo cáo HS','Lịch sử quét HS và ảnh đối chiếu','#scan?report=HS','teal'],['stock','Báo cáo Stock','Lượt quét Stock, QTY và ảnh đối chiếu','#scan?report=Stock','blue'],['label','Báo cáo Label','Lịch sử quét Label và ảnh đối chiếu','#scan?report=Label','violet'],['ckd','Báo cáo CKD · Excel','Chọn đơn hiện tại hoặc tất cả đơn','#ckd?report=excel','teal'],['ckd-photos','Báo cáo CKD · ZIP + ảnh','Báo cáo kèm các ảnh gốc','#ckd?report=zip','blue'],['holding','Báo cáo Holding','Tổng ITEM, box tồn và nhật ký theo bộ lọc','#holding?report=holding','violet']];
  $('#main').innerHTML=`${pageTop('Xuất báo cáo','Chọn báo cáo cần xuất')}<nav class='mm-folder-grid' id='report-list' aria-label='Các báo cáo'>${reports.map(([key,title,note,href,tone])=>`<a class='mm-folder ${tone}' data-report-kind='${key}' href='${href}'><span class='mm-folder-icon'>${icon('download')}</span><h2>${title}</h2><p>${note}</p><span class='mm-folder-arrow'>${icon('arrow')}</span></a>`).join('')}</nav>`;
 }
 function openDataReport(page){
  if(!state.user)return;const kind=new URLSearchParams(location.hash.split('?')[1]||'').get('report');if(!kind)return;
  if(page==='holding'&&kind==='holding')$('#h-tab-stock')?.click();
- const target=page==='scan'&&['HS','Stock','Label'].includes(kind)?$('#scan-export'):page==='ckd'&&['excel','zip'].includes(kind)?$(kind==='zip'?'#ckd-report-zip':'#ckd-export'):page==='holding'&&kind==='holding'?$('#h-export'):null;if(!target)return;
+ const target=page==='sorting'&&kind==='vendor'?$('#sorting-export'):page==='scan'&&['HS','Stock','Label'].includes(kind)?$('#scan-export'):page==='ckd'&&['excel','zip'].includes(kind)?$(kind==='zip'?'#ckd-report-zip':'#ckd-export'):page==='holding'&&kind==='holding'?$('#h-export'):null;if(!target)return;
  $('#main .page-top')?.insertAdjacentHTML('afterend',`<a class='button small' id='report-back' href='#reports'>← Xuất báo cáo</a>`);target.scrollIntoView({block:'center'});target.focus({preventScroll:true});
 }
 function dataImports(){
@@ -503,6 +504,7 @@ function openDataImport(page){
  for(let el=target;el&&el!==$('#main');el=el.parentElement)if(el.tagName==='DETAILS')el.open=true;
  $('#main .page-top')?.insertAdjacentHTML('afterend',`<a class='button small' id='data-import-back' href='#imports'>← Nhập file dữ liệu</a>`);target.scrollIntoView({block:'center'});
 }
+async function sorting(){if(!state.user){$('#main').innerHTML=needsLogin('Sorting vendor');return;}await renderSorting({api,state,escape,number,time,icon,field,pageTop,canWrite,toast});}
 async function heatsink(){
  if(!state.user){$('#main').innerHTML=needsLogin('List sub heatsink');return;}
  await renderHeatsink({api,state,escape,number,icon,button,pageTop,toast,detail,openScanner:options=>{stopCamera();phoneScanner=new PhoneScanner($('#camera-dialog'),options);phoneScanner.open();return phoneScanner;}});
@@ -545,7 +547,7 @@ async function render() {
   const reportMode=new URLSearchParams(location.hash.split('?')[1]||'').get('report');if(page==='scan'&&['HS','Stock','Label'].includes(reportMode))state.mode=reportMode;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { reports:reportHub,imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
+  const route = { sorting,reports:reportHub,imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
   document.title = `${(page==='imports'?'Nhập file dữ liệu':page==='reports'?'Xuất báo cáo':routes.find(r => r[0] === page)?.[2]) || 'Trang chủ'} · Work Area`;
   try { await (route || home)(id); if(id===renderId){openDataImport(page);openDataReport(page);} } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }

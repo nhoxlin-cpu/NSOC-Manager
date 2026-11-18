@@ -1,3 +1,4 @@
+import {saveSorting,listSorting,sortingReport} from './lib/sorting.mjs';
 import {registrationMode,setRegistrationMode,registerEmployee,pendingRegistrations,reviewRegistration} from './lib/registration.mjs';
 import {listHeatsink,importHeatsink} from './lib/heatsink-data.mjs';
 import {parseHeatsinkInWorker} from './lib/heatsink-workbook.mjs';
@@ -116,7 +117,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
           return res.end(req.method==='HEAD'?undefined:buffer);
         }
         const files = { '/register':['register.html','text/html'],'/register.html':['register.html','text/html'],'/registration-page.js':['registration-page.js','text/javascript'],'/registration-page.css':['registration-page.css','text/css'], '/': ['index.html', 'text/html'], '/index.html': ['index.html', 'text/html'], '/app.js': ['app.js', 'text/javascript'], '/style.css': ['style.css', 'text/css'], '/icon.svg': ['icon.svg', 'image/svg+xml'], '/manifest.webmanifest': ['manifest.webmanifest', 'application/manifest+json'] };
-        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/heatsink.js':['heatsink.js','text/javascript'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/app-updates.js':['app-updates.js','text/javascript'],'/watch-results.js':['watch-results.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
+        Object.assign(files,{'/holding.js':['holding.js','text/javascript'],'/holding.css':['holding.css','text/css'],'/hs-code.js':['hs-code.js','text/javascript'],'/cutting.css':['cutting.css','text/css'],'/sorting.js':['sorting.js','text/javascript'],'/heatsink.js':['heatsink.js','text/javascript'],'/cutting.js':['cutting.js','text/javascript'],'/ckd.js':['ckd.js','text/javascript'],'/ckd-code.js':['ckd-code.js','text/javascript'],'/app-updates.js':['app-updates.js','text/javascript'],'/watch-results.js':['watch-results.js','text/javascript'],'/vendor/JsBarcode.code128-3.12.3.min.js':['vendor/JsBarcode.code128-3.12.3.min.js','text/javascript'],'/vendor/jsbarcode-LICENSE':['vendor/jsbarcode-LICENSE','text/plain'],'/scanner.js':['scanner.js','text/javascript'],'/scanner-tools.js':['scanner-tools.js','text/javascript'],'/scanner.css':['scanner.css','text/css'],'/vendor/zxing-0.21.3.min.js':['vendor/zxing-0.21.3.min.js','text/javascript'],'/vendor/zxing-LICENSE':['vendor/zxing-LICENSE','text/plain']});
         const asset = files[path]; if (!asset) fail(404, 'Không tìm thấy trang.');
         const buffer = await readFile(resolve(publicDir, asset[0]));
         res.writeHead(200, { 'Content-Type': asset[1] + '; charset=utf-8', 'Cache-Control': path.startsWith('/vendor/') ? 'public, max-age=31536000, immutable' : onlineRegistrationRoutes.has(path)?'no-store':'no-cache' });
@@ -247,7 +248,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'POST' && path === '/api/preferences') {
         const body=await jsonBody(req),hasNavigation=Object.hasOwn(body,'navigation'),hasContinuous=Object.hasOwn(body,'continuous_scan'),navigation=hasNavigation ? body.navigation : ['home','scan','assistant','account'];
-        const allowed=['heatsink','home','scan','ckd','cut','holding','mm','assistant','account'];
+        const allowed=['sorting','heatsink','home','scan','ckd','cut','holding','mm','assistant','account'];
         if (!hasNavigation && !hasContinuous) fail(400,'Cần gửi phím tắt hoặc chế độ quét.');
         if (hasContinuous && typeof body.continuous_scan!=='boolean') fail(400,'Chế độ quét liên tục phải là bật hoặc tắt.');
         if (!Array.isArray(navigation) || navigation.length<3 || navigation.length>5 || new Set(navigation).size!==navigation.length || navigation.some(x=>typeof x!=='string' || !allowed.includes(x))) fail(400,'Chọn từ 3 đến 5 phím tắt khác nhau trong danh sách.');
@@ -317,6 +318,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(path.endsWith('.zip')){res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="work-area-ckd-report.zip"'});try{await streamZip(res,report.entries());}catch{res.destroy();}return;}
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
+      if(req.method==='GET'&&path==='/api/sorting/records')return send(res,200,listSorting(db,Object.fromEntries(url.searchParams)));
+      if(req.method==='POST'&&path==='/api/sorting/records'){writeAccess(u);return send(res,201,saveSorting(db,await jsonBody(req,16384),u.id));}
+      if(req.method==='GET'&&path==='/api/sorting/export'){const bytes=sortingReport(db,Object.fromEntries(url.searchParams),u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="Sorting-YUWON.xlsx"'});res.end(bytes);return;}
       if(req.method==='GET'&&path==='/api/heatsink')return send(res,200,listHeatsink(db,Object.fromEntries(url.searchParams)));
       const heatsinkImage=/^\/api\/heatsink\/image\/([a-f0-9]{64})$/.exec(path);
       if(req.method==='GET'&&heatsinkImage){const row=db.prepare('SELECT mime,bytes FROM heatsink_images WHERE id=?').get(heatsinkImage[1]);if(!row)fail(404,'Không tìm thấy ảnh.');res.writeHead(200,{'Content-Type':row.mime,'Cache-Control':'private, max-age=3600'});res.end(row.bytes);return;}
