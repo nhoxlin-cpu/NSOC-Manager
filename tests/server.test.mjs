@@ -475,16 +475,16 @@ test('password change invalidates all sessions and logout invalidates a session 
   assert.equal((await request('/api/scans',inspector)).status,401);
 });
 
-test('account creation and password changes accept exactly eight characters and reject seven', async () => {
-  const user = { username:'password-boundary',name:'Password boundary',role:'viewer',password:'Eight!pw' };
-  assert.equal((await request('/api/users',admin,'POST',{ ...user,password:'Seven!p' })).status,400);
+test('account creation and password changes accept four-digit passwords including leading zeroes and reject three', async () => {
+  const user = { username:'password-boundary',name:'Password boundary',role:'viewer',password:'0042' };
+  assert.equal((await request('/api/users',admin,'POST',{ ...user,password:'123' })).status,400);
   assert.equal((await request('/api/users',admin,'POST',user)).status,201);
   const loggedIn = await request('/api/login',null,'POST',{ username:user.username,password:user.password });
   assert.equal(loggedIn.status,200);
   const s = { cookie:loggedIn.headers.get('set-cookie').split(';')[0],csrf:loggedIn.data.csrf };
-  assert.equal((await request('/api/password',s,'POST',{ oldPassword:user.password,password:'Seven!p' })).status,400);
-  assert.equal((await request('/api/password',s,'POST',{ oldPassword:user.password,password:'New!pw88' })).status,200);
-  assert.equal((await request('/api/login',null,'POST',{ username:user.username,password:'New!pw88' })).status,200);
+  assert.equal((await request('/api/password',s,'POST',{ oldPassword:user.password,password:'123' })).status,400);
+  assert.equal((await request('/api/password',s,'POST',{ oldPassword:user.password,password:'0007' })).status,200);
+  assert.equal((await request('/api/login',null,'POST',{ username:user.username,password:'0007' })).status,200);
 });
 
 test('failed-login throttling limits repeated guesses without leaking account existence', async () => {

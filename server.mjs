@@ -48,7 +48,7 @@ const requestId = value => {
   return value;
 };
 function validPassword(value) {
-  if (typeof value !== 'string' || value.length < 8 || value.length > 128) fail(400, 'Mật khẩu phải có từ 8 đến 128 ký tự.');
+  if (typeof value !== 'string' || value.length < 4 || value.length > 128) fail(400, 'Mật khẩu phải có từ 4 đến 128 ký tự.');
   return value;
 }
 async function jsonBody(req, limit = 5 * 1024 * 1024) {
