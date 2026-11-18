@@ -1,3 +1,4 @@
+import {registrationMode,setRegistrationMode,registerEmployee,pendingRegistrations,reviewRegistration} from './lib/registration.mjs';
 import {listHeatsink,importHeatsink} from './lib/heatsink-data.mjs';
 import {parseHeatsinkInWorker} from './lib/heatsink-workbook.mjs';
 import {EventEmitter} from 'node:events';
@@ -146,6 +147,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const u = sessionUser(db, req.headers.cookie);
         return send(res, 200, { user: u ? publicUser(u) : null, csrf: u?.csrf || null, needsSetup: db.prepare('SELECT COUNT(*) n FROM users').get().n === 0 });
       }
+      if(req.method==='GET'&&path==='/api/registration')return send(res,200,{mode:registrationMode(db)});
       if(req.method==='POST'&&path==='/api/register'){
         if(!db.prepare('SELECT id FROM users LIMIT 1').get())fail(403,'Quản trị viên cần thiết lập tài khoản đầu tiên trước khi mở đăng ký.');
         const b=await jsonBody(req,8192),username=text(b.username,'Tên đăng nhập',64).toLowerCase(),name=text(b.name,'Họ tên',100);
@@ -157,8 +159,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const record=db.prepare('INSERT INTO login_attempts VALUES (?,1,?) ON CONFLICT(attempt_key) DO UPDATE SET count=count+1');for(const [key] of keys)record.run(key,now+900000);
         if(db.prepare('SELECT id FROM users WHERE username=?').get(username))fail(409,'Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');
         const password=await hashPassword(plain);
-        try{db.prepare("INSERT INTO users(username,name,password,role) VALUES (?,?,?,'inspector')").run(username,name,password);}catch(e){if(e.errcode&&((e.errcode&255)===19))fail(409,'Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');throw e;}
-        return send(res,201,{ok:true,username});
+        return send(res,201,registerEmployee(db,{username,name,password}));
       }
       if (req.method === 'POST' && path === '/api/login') {
         const body = await jsonBody(req), username = text(body.username, 'Tên đăng nhập', 64).toLowerCase();
@@ -172,6 +173,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         addAttempt.run(key, now + 900_000); addAttempt.run(globalKey, now + 900_000);
         const u = db.prepare('SELECT * FROM users WHERE username=?').get(username);
         const valid = await verifyPassword(body.password, u?.password || dummy);
+        if(u&&valid&&!u.active){const r=db.prepare('SELECT status FROM registration_requests WHERE user_id=?').get(u.id);if(r&&['pending','rejected'].includes(r.status)){db.prepare('DELETE FROM login_attempts WHERE attempt_key=?').run(key);db.prepare('UPDATE login_attempts SET count=MAX(count-1,0) WHERE attempt_key=?').run(globalKey);fail(403,r.status==='pending'?'Tài khoản đang chờ quản trị viên duyệt.':'Đăng ký chưa được chấp thuận. Liên hệ quản trị viên.');}}
         if (!u || !u.active || !valid) fail(401, 'Tên đăng nhập hoặc mật khẩu không đúng.');
         db.prepare('DELETE FROM login_attempts WHERE attempt_key=?').run(key);
         db.prepare('UPDATE login_attempts SET count=MAX(count-1,0) WHERE attempt_key=?').run(globalKey);
@@ -268,6 +270,10 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         try{bundle=await recoveryBundle(db,fileURLToPath(new URL('./',import.meta.url)),origin);res.writeHead(200,{'Content-Type':'application/zip','Content-Disposition':'attachment; filename="WorkArea-server-backup.zip"','Cache-Control':'no-store'});await streamZip(res,bundle.entries());}finally{await bundle?.cleanup();recoveryBusy=false;}
         return;
       }
+      if(req.method==='GET'&&path==='/api/admin/registrations'){adminAccess(u);return send(res,200,pendingRegistrations(db,url.searchParams.get('offset')));}
+      if(req.method==='POST'&&path==='/api/admin/registration-mode'){adminAccess(u);const b=await jsonBody(req,4096);return send(res,200,setRegistrationMode(db,b.mode,u.id));}
+      const registrationReview=/^\/api\/admin\/registrations\/(\d+)\/review$/.exec(path);
+      if(req.method==='POST'&&registrationReview){adminAccess(u);const b=await jsonBody(req,4096);return send(res,200,reviewRegistration(db,Number(registrationReview[1]),b.decision,u.id));}
       if (req.method === 'GET' && path === '/api/users') {
         adminAccess(u); return send(res, 200, { users: db.prepare('SELECT id,username,name,role,active FROM users ORDER BY id').all() });
       }
