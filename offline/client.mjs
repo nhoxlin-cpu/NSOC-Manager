@@ -45,6 +45,7 @@ class OfflineClient{
  }
  async api(path,options={},network){
   const method=options.method||'GET';
+  if(path==='/register')return this.remote('/register',{method:'POST',data:options.data});
   if(path==='/login')return this.login(options.data);
   if(path==='/logout'){this.meta.active=false;await this.persist();if(this.csrf)this.remote('/logout',{method:'POST',data:{}}).catch(()=>{});this.csrf=null;this.paint();return {ok:true};}
   if(path==='/me'){

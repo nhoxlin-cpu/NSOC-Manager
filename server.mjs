@@ -146,6 +146,20 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         const u = sessionUser(db, req.headers.cookie);
         return send(res, 200, { user: u ? publicUser(u) : null, csrf: u?.csrf || null, needsSetup: db.prepare('SELECT COUNT(*) n FROM users').get().n === 0 });
       }
+      if(req.method==='POST'&&path==='/api/register'){
+        if(!db.prepare('SELECT id FROM users LIMIT 1').get())fail(403,'Quản trị viên cần thiết lập tài khoản đầu tiên trước khi mở đăng ký.');
+        const b=await jsonBody(req,8192),username=text(b.username,'Tên đăng nhập',64).toLowerCase(),name=text(b.name,'Họ tên',100);
+        if(!/^[a-z0-9._-]{3,64}$/.test(username))fail(400,'Tên đăng nhập: 3–64 ký tự a–z, số, dấu chấm, gạch ngang hoặc gạch dưới.');
+        const plain=validPassword(b.password);if(b.confirm!==plain)fail(400,'Mật khẩu xác nhận chưa khớp.');
+        const now=Date.now();db.prepare('DELETE FROM login_attempts WHERE until < ?').run(now);
+        const keys=[['register:all',100],['register:ip:'+digest(req.socket.remoteAddress||''),50]];
+        for(const [key,limit] of keys){const old=db.prepare('SELECT count FROM login_attempts WHERE attempt_key=?').get(key);if(old&&old.count>=limit)fail(429,'Quá nhiều lần đăng ký. Vui lòng thử lại sau 15 phút.');}
+        const record=db.prepare('INSERT INTO login_attempts VALUES (?,1,?) ON CONFLICT(attempt_key) DO UPDATE SET count=count+1');for(const [key] of keys)record.run(key,now+900000);
+        if(db.prepare('SELECT id FROM users WHERE username=?').get(username))fail(409,'Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');
+        const password=await hashPassword(plain);
+        try{db.prepare("INSERT INTO users(username,name,password,role) VALUES (?,?,?,'inspector')").run(username,name,password);}catch(e){if(e.errcode&&((e.errcode&255)===19))fail(409,'Tên đăng nhập đã tồn tại. Vui lòng chọn tên khác.');throw e;}
+        return send(res,201,{ok:true,username});
+      }
       if (req.method === 'POST' && path === '/api/login') {
         const body = await jsonBody(req), username = text(body.username, 'Tên đăng nhập', 64).toLowerCase();
         const now = Date.now(), key = digest(username), globalKey = 'all-logins';
