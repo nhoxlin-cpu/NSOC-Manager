@@ -11,7 +11,7 @@ self.addEventListener('activate',event=>event.waitUntil((async()=>{
 self.addEventListener('message',event=>{if(event.data?.type!=='SHELL_READY'||!event.ports[0])return;event.waitUntil((async()=>{const cache=await caches.open(CACHE),keys=new Set((await cache.keys()).map(r=>new URL(r.url).pathname));event.ports[0].postMessage({ready:ASSETS.every(p=>keys.has(p))});})());});
 self.addEventListener('fetch',event=>{
  const request=event.request,url=new URL(request.url);
- if(request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/downloads/'))return;
+ if(request.method!=='GET'||url.origin!==self.location.origin||url.pathname.startsWith('/api/')||url.pathname.startsWith('/downloads/')||['/register','/register.html','/registration-page.js','/registration-page.css'].includes(url.pathname))return;
  const key=request.mode==='navigate'&&(url.pathname==='/'||url.pathname==='/index.html')?'/index.html':url.pathname;
  if(!SHELL.has(key))return;
  event.respondWith((async()=>{const cached=await(await caches.open(CACHE)).match(key);return cached||fetch(request);})());

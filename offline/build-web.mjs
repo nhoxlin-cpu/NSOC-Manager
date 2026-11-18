@@ -9,7 +9,7 @@ await import('./build-assets.mjs');
 const out=path.resolve(process.env.WORKAREA_OFFLINE_OUTPUT);
 fs.copyFileSync(path.join(root,'offline/web-boot.mjs'),path.join(out,'web-boot.js'));
 const app=path.join(out,'app.js');fs.writeFileSync(app,"import {lockWebWorkspace,enableWebOffline} from '/web-boot.js';\nawait lockWebWorkspace();\n"+fs.readFileSync(app,'utf8').replace('await offlineClient.ready();','await offlineClient.ready();\nenableWebOffline(offlineClient);'));
-const files=[];function walk(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory())walk(p);else if(!['sw.js','web-manifest.json'].includes(e.name))files.push(path.relative(out,p).replaceAll('\\','/'));}}walk(out);
+const files=[];function walk(dir){for(const e of fs.readdirSync(dir,{withFileTypes:true})){const p=path.join(dir,e.name);if(e.isDirectory())walk(p);else if(!['sw.js','web-manifest.json','register.html','registration-page.js','registration-page.css'].includes(e.name))files.push(path.relative(out,p).replaceAll('\\','/'));}}walk(out);
 const version=createHash('sha256').update(files.sort().map(p=>p+createHash('sha256').update(fs.readFileSync(path.join(out,p))).digest('hex')).join('\n')).digest('hex').slice(0,20);
 const template=fs.readFileSync(path.join(root,'offline/web-worker.js'),'utf8');fs.writeFileSync(path.join(out,'sw.js'),template.replace('__VERSION__',version).replace('__ASSETS__',JSON.stringify(files.map(p=>'/'+p))));
 fs.writeFileSync(path.join(out,'web-manifest.json'),JSON.stringify({version,files:[...files,'sw.js']}));

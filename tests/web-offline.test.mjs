@@ -23,3 +23,8 @@ test('worker caches only its shell, preserves old versions on failed install and
  let reply;const check={...event(),data:{type:'SHELL_READY'},ports:[{postMessage:r=>reply=r}]};handlers.message(check);await check.promise;assert.equal(reply.ready,true);stored.get('work-area-shell-test').delete('/app.js');handlers.message(check);await check.promise;assert.equal(reply.ready,false);
  const activate=event();handlers.activate(activate);await activate.promise;assert.ok(!stored.has('work-area-shell-old'));assert.ok(stored.has('unrelated'));
 });
+
+test('standalone signup bypasses service worker even when accidentally listed in shell assets',async()=>{
+ const paths=['/register','/register.html','/registration-page.js','/registration-page.css'];const source=(await readFile(new URL('../offline/web-worker.js',import.meta.url),'utf8')).replace('__VERSION__','signup-test').replace('__ASSETS__',JSON.stringify(paths));const handlers={};vm.runInNewContext(source,{self:{location:{origin:'https://test.local'},addEventListener:(name,fn)=>handlers[name]=fn},URL,Set});
+ for(const path of paths)handlers.fetch({request:{url:'https://test.local'+path,method:'GET',mode:'navigate'},respondWith(){assert.fail('Signup must use the current server response');}});
+});

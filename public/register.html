@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#123143">
+  <title>Đăng ký tài khoản · Work Area</title>
+  <link rel="icon" href="/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/registration-page.css">
+  <script type="module" src="/registration-page.js"></script>
+</head>
+<body>
+  <header><a href="/#home">WORK AREA</a><a href="/#account">Đăng nhập</a></header>
+  <main>
+    <section class="card" id="signup-card">
+      <h1>Đăng ký tài khoản</h1>
+      <p>Tạo tài khoản nhân viên để sử dụng Work Area trên web hoặc app.</p>
+      <p class="notice" id="signup-policy" role="status">Đang kiểm tra chế độ duyệt…</p>
+      <form id="web-register-form" action="/api/register" method="post">
+        <label for="signup-name">Họ tên</label>
+        <input id="signup-name" name="name" autocomplete="name" maxlength="100" required>
+        <label for="signup-username">Tên đăng nhập</label>
+        <input id="signup-username" name="username" autocomplete="username" autocapitalize="none" spellcheck="false" minlength="3" maxlength="64" pattern="[a-zA-Z0-9._\-]{3,64}" aria-describedby="username-help" required>
+        <small id="username-help">3–64 ký tự: chữ không dấu, số, dấu chấm, gạch ngang hoặc gạch dưới.</small>
+        <label for="signup-password">Mật khẩu</label>
+        <input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="128" placeholder="Ít nhất 8 ký tự" required>
+        <label for="signup-confirm">Xác nhận mật khẩu</label>
+        <input id="signup-confirm" name="confirm" type="password" autocomplete="new-password" minlength="8" maxlength="128" required>
+        <p class="error" id="signup-error" role="alert"></p>
+        <button id="signup-submit" type="submit">Đăng ký tài khoản</button>
+        <p id="signup-progress" class="progress" role="status" hidden><span aria-hidden="true"></span> Đang tạo tài khoản…</p>
+      </form>
+      <a class="login-link" href="/#account">Đã có tài khoản? Đăng nhập</a>
+    </section>
+    <section class="card" id="signup-success" role="status" hidden>
+      <h1>Đã nhận đăng ký</h1>
+      <p id="signup-result"></p>
+      <a class="button" href="/#account">Về màn hình đăng nhập</a>
+    </section>
+    <p class="footnote">Đăng ký cần kết nối server. Không cần xóa dữ liệu đã lưu trên trình duyệt.</p>
+    <noscript>Cần bật JavaScript để đăng ký tài khoản.</noscript>
+  </main>
+</body>
+</html>

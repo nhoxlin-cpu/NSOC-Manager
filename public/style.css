@@ -91,3 +91,5 @@
 .quality-workspace .quality-motion{width:30px;height:30px;bottom:13px;right:13px}
 }
 @media(max-width:360px){.quality-workspace{padding:18px 16px 44px;min-height:260px}.quality-workspace .quality-welcome h1{font-size:23px}.quality-workspace .quality-copy h2{font-size:17px}.quality-workspace .quality-art{width:38%}.quality-workspace .quality-core{width:70px;height:86px}.quality-workspace .workspace-flow{left:16px}}
+
+.signup-entry{margin:18px 0 22px}
