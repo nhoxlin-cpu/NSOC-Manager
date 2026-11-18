@@ -147,7 +147,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       }
       if (req.method === 'GET' && path === '/api/me') {
         const u = sessionUser(db, req.headers.cookie);
-        return send(res, 200, { user: u ? publicUser(u) : null, csrf: u?.csrf || null, needsSetup: db.prepare('SELECT COUNT(*) n FROM users').get().n === 0 });
+        return send(res, 200, { user: u ? publicUser(u) : null, offline_realm:u?offlineRealm(db):null, csrf: u?.csrf || null, needsSetup: db.prepare('SELECT COUNT(*) n FROM users').get().n === 0 });
       }
       if(req.method==='GET'&&path==='/api/registration')return send(res,200,{mode:registrationMode(db)});
       if(req.method==='POST'&&path==='/api/register'){
@@ -180,7 +180,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         db.prepare('DELETE FROM login_attempts WHERE attempt_key=?').run(key);
         db.prepare('UPDATE login_attempts SET count=MAX(count-1,0) WHERE attempt_key=?').run(globalKey);
         const s = issueSession(db, u.id);
-        return send(res, 200, { user: publicUser(u), csrf: s.csrf }, { 'Set-Cookie': cookie(s.token) });
+        return send(res, 200, { user: publicUser(u), csrf: s.csrf, offline_realm:offlineRealm(db) }, { 'Set-Cookie': cookie(s.token) });
       }
       const u = sessionUser(db, req.headers.cookie);
       if (!u) fail(401, 'Vui lòng đăng nhập để sử dụng dữ liệu công việc.');

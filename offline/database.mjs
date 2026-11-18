@@ -1,8 +1,8 @@
 import initSqlJs from 'sql.js';
 import {normalizeLabelHistory} from '../lib/label-normalization.mjs';
 let engine;
-export async function openDeviceDatabase(bytes){
- engine??=initSqlJs({locateFile:name=>'/offline/'+name});const SQL=await engine,raw=new SQL.Database(new Uint8Array(bytes));raw.run('PRAGMA foreign_keys=ON');
+export async function openDeviceDatabase(bytes=new Uint8Array()){
+ engine??=(async()=>{let wasm;try{const cached=typeof caches!=='undefined'&&await caches.match('/offline/sql-wasm.wasm');if(cached)wasm=new Uint8Array(await cached.arrayBuffer());}catch{}return initSqlJs({locateFile:name=>'/offline/'+name,...(wasm?{wasmBinary:wasm}:{})});})().catch(error=>{engine=undefined;throw error;});const SQL=await engine,raw=new SQL.Database(new Uint8Array(bytes));raw.run('PRAGMA foreign_keys=ON');
  const convert=row=>Object.fromEntries(Object.entries(row).map(([key,value])=>[key,value instanceof Uint8Array?Buffer.from(value):value]));
  const database={raw,exec:sql=>raw.run(sql),close:()=>raw.close(),prepare(sql){return {
   all(...args){const stmt=raw.prepare(sql);try{stmt.bind(args.map(v=>v===undefined?null:v));const rows=[];while(stmt.step())rows.push(convert(stmt.getAsObject()));return rows;}finally{stmt.free();}},
