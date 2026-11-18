@@ -44,7 +44,7 @@ class OfflineClient{
   this.meta.serverRealm=result.offline_realm||this.meta.serverRealm||null;this.meta.profile=result.user;this.meta.active=true;this.csrf=result.csrf;this.authNeeded=false;await this.persist();this.prepareVerifier(data.password);
   this.paint();return result;
  }
- async ensureHsWorkspace(){return this.serial(async()=>{if(this.db)return;if(!this.meta.active||!this.meta.profile)fail('Đăng nhập tài khoản để lưu lượt HS.',401);if(this.replayError||this.ops.length)fail('Hàng chờ cần kiểm tra trước khi tiếp tục.',503);const db=await openDeviceDatabase();try{initHsWorkspace(db,this.meta.profile);const meta={...this.meta,hsOnly:true,baseUserId:this.meta.profile.id,snapshotAt:null,maps:{},realm:this.meta.serverRealm||null};if(meta.realm)db.prepare("INSERT INTO offline_settings VALUES('realm',?)").run(meta.realm);const bytes=db.raw.export();db.exec('PRAGMA foreign_keys=ON');await change(['base','meta'],tx=>{tx.objectStore('base').put(bytes,'active');tx.objectStore('meta').put(meta,'active');});this.meta=meta;this.db=db;this.paint();}catch(error){db.close();throw error;}});}
+ async ensureHsWorkspace(){return this.serial(async()=>{if(this.db)return;if(!this.meta.active||!this.meta.profile)fail('Đăng nhập tài khoản để lưu lượt HS.',401);const db=await openDeviceDatabase();try{initHsWorkspace(db,this.meta.profile);const meta={...this.meta,hsOnly:true,baseUserId:this.meta.profile.id,snapshotAt:null,maps:{},realm:this.meta.serverRealm||null};if(meta.realm)db.prepare("INSERT INTO offline_settings VALUES('realm',?)").run(meta.realm);const bytes=db.raw.export();db.exec('PRAGMA foreign_keys=ON');await change(['base','meta'],tx=>{tx.objectStore('base').put(bytes,'active');tx.objectStore('meta').put(meta,'active');});this.meta=meta;this.db=db;this.paint();}catch(error){db.close();throw error;}});}
  supportsLocal(path,options={}){return !this.meta.hsOnly||hsWorkspacePath(path,options,document.querySelector('[data-mode].active')?.dataset.mode);}
  async onlineWithoutWorkspace(network){
   if(!navigator.onLine)fail('Đang mất mạng. Kết nối lại để dùng online, hoặc tải dữ liệu trong Đồng bộ trước khi dùng offline.',503);
@@ -62,7 +62,7 @@ class OfflineClient{
    if(this.meta.profile&&!this.meta.active)return {user:null,csrf:null,needsSetup:false};
    const value=await network();if(value.user){this.meta.serverRealm=value.offline_realm||null;this.meta.profile=value.user;this.meta.active=true;this.csrf=value.csrf;await this.persist();}return value;
   }
-  if(this.meta.active&&!this.db&&!this.replayError&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
+  const hsLocal=path==='/scans'&&options.data?.mode==='HS'&&this.meta.active;if(this.meta.active&&!this.db&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
   if(this.meta.hsOnly&&!this.supportsLocal(path,options))return this.onlineWithoutWorkspace(network);
   if(!this.db||!this.meta.active||this.replayError){if(path==='/scans'&&options.data?.mode==='HS')fail('Đăng nhập để lưu HS; hàng chờ đang lỗi cần kiểm tra trước.',503);if(this.replayError)fail(this.notice||'Hàng chờ cần kiểm tra trước khi tiếp tục.',503);return this.onlineWithoutWorkspace(network);}
   if(method==='DELETE'&&/^\/scans\/\d+$/.test(path)){const id=Number(path.split('/').at(-1)),row=this.db.prepare('SELECT mode FROM scans WHERE id=?').get(id);if(!row)fail('Không còn lượt quét.',404);path='/scans/delete';options={method:'POST',data:{mode:row.mode,ids:[id]}};}
