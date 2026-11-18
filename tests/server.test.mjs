@@ -31,16 +31,25 @@ async function login(username) {
   return { cookie:r.headers.get('set-cookie').split(';')[0], csrf:r.data.csrf };
 }
 const box = overrides => ({ request_id:randomUUID(), delivery:'PN-001', box_ref:randomUUID(), item_code:'ITEM-1', label_a:'bn83-test', label_b:' BN83-TEST ', maker:'yageo', qty:5000, ...overrides });
+test('all member roles delete shared scan history while Holding stays admin-only',async()=>{
+ for(const session of [inspector,viewer])for(const mode of ['HS','Stock','Label']){
+  const id=Number(db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id) VALUES(?,?,?,1)').run(randomUUID(),'MEMBER-DELETE',mode).lastInsertRowid);
+  const response=await request('/api/scans/delete',session,'POST',{mode,ids:[id]});assert.equal(response.status,200);assert.equal(response.data.deleted,1);
+  const single=Number(db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id) VALUES(?,?,?,1)').run(randomUUID(),'MEMBER-SINGLE',mode).lastInsertRowid);assert.equal((await request('/api/scans/'+single,session,'DELETE')).status,200);
+ }
+ for(const session of [inspector,viewer]){assert.equal((await request('/api/holding/v2/delete-preview',session)).status,403);assert.equal((await request('/api/holding/v2/delete',session,'POST',{rows:[]})).status,403);}
+});
+
 test('HS selected/all deletion is scoped, authorized, atomic and preserves newer scans',async()=>{
   const insert=db.prepare('INSERT INTO scans(request_id,barcode,mode,user_id,image_type,image) VALUES (?,?,?,1,?,?)');
   const seed=mode=>Number(insert.run(randomUUID(),'BULK-HS-FIXTURE',mode,'image/png',Buffer.from('fixture')).lastInsertRowid);
   const a=seed('HS'),b=seed('HS'),stock=seed('Stock'),label=seed('Label');
   const body={mode:'HS',ids:[a]};
-  assert.equal((await request('/api/scans/delete',inspector,'POST',body)).status,403);
-  assert.equal((await request('/api/scans/delete',viewer,'POST',body)).status,403);
+  assert.equal((await request('/api/scans/delete',inspector,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
+  assert.equal((await request('/api/scans/delete',viewer,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
   assert.equal((await request('/api/scans/delete',admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
   assert.equal((await request('/api/scans/delete',admin,'POST',{mode:'HS',ids:[a,stock]})).status,409);assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(a));
-  assert.equal((await request('/api/scans/delete',admin,'POST',body)).data.deleted,1);assert.equal((await request('/api/scans/'+a+'/image',admin)).status,404);
+  assert.equal((await request('/api/scans/delete',viewer,'POST',body)).data.deleted,1);assert.equal((await request('/api/scans/'+a+'/image',admin)).status,404);
   const snapshot=(await request('/api/scans?mode=HS',admin)).data.max_id,newer=seed('HS');
   assert.equal((await request('/api/scans/delete',admin,'POST',{mode:'HS',all:true,through_id:snapshot})).data.deleted,1);
   for(const id of [newer,stock,label])assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(id));
@@ -54,12 +63,12 @@ test('Stock bulk deletion is scoped, authorized and atomic; ITEM totals cover al
   const group=list.data.stock_summary.find(r=>r.item_code===item);assert.equal(group.scans,105);assert.equal(group.quantity_count,104);assert.equal(group.total_quantity,52);
   const endpoint='/api/scans/delete',body={mode:'Stock',ids:[ids[0],ids[1]]};
   assert.equal((await request(endpoint,null,'POST',body)).status,401);
-  for(const session of [inspector,viewer])assert.equal((await request(endpoint,session,'POST',body)).status,403);
+  for(const session of [inspector,viewer])assert.equal((await request(endpoint,session,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
   assert.equal((await request(endpoint,admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
   const hs=Number(db.prepare("INSERT INTO scans(request_id,barcode,mode,user_id) VALUES (?,?,'HS',1)").run(randomUUID(),'BULK-HS-KEEP').lastInsertRowid);
   assert.equal((await request(endpoint,admin,'POST',{mode:'Stock',ids:[ids[0],hs]})).status,409);assert.ok(db.prepare('SELECT id FROM scans WHERE id=?').get(ids[0]));
   assert.equal((await request(endpoint,admin,'POST',{mode:'Invalid',all:true,through_id:hs})).status,400);
-  const deleted=await request(endpoint,admin,'POST',body);assert.equal(deleted.data.deleted,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM scan_stock WHERE scan_id IN (?,?)').get(...body.ids).n,0);
+  const deleted=await request(endpoint,inspector,'POST',body);assert.equal(deleted.data.deleted,2);assert.equal(db.prepare('SELECT COUNT(*) n FROM scan_stock WHERE scan_id IN (?,?)').get(...body.ids).n,0);
   const after=(await request('/api/scans?mode=Stock',admin)).data;assert.equal(after.stock_summary.find(r=>r.item_code===item).total_quantity,51.5);
   const newer=Number(insert.run(randomUUID(),'BULK-NEWER',7).lastInsertRowid);
   assert.equal((await request(endpoint,admin,'POST',{mode:'Stock',all:true,through_id:after.max_id})).status,200);
@@ -123,7 +132,7 @@ test('scans are shared between users, image validation rejects non-image content
   const repeated = await request('/api/scans',inspector,'POST',payload); assert.equal(repeated.status,200); assert.equal(repeated.data.id,first.data.id);
   const listed = await request('/api/scans',viewer); assert.equal(listed.data.total,1); assert.equal(listed.data.scans[0].item_code,'ITEM-1');
   assert.equal((await request('/api/scans',inspector,'POST',{ ...payload, request_id:randomUUID(),image:'data:image/png;base64,PHNjcmlwdD4=' })).status,400);
-  assert.equal((await request('/api/scans/' + first.data.id,inspector,'DELETE')).status,403);
+  assert.equal((await request('/api/scans/' + first.data.id,inspector,'DELETE',{}, {'X-CSRF-Token':'wrong'})).status,403);
 });
 
 test('CKD never passes missing MM, different labels or wrong maker; checking alone saves no boxes', async () => {
@@ -357,12 +366,12 @@ test('CKD occurrence history paginates without losing or repeating scan rows',as
   const first=(await request('/api/ckd/history?workbook_id='+w.id,viewer)).data;assert.equal(first.checks.length,200);assert.equal(first.count,205);assert.ok(first.next);
   const second=(await request('/api/ckd/history?workbook_id='+w.id+'&before='+first.next,viewer)).data;assert.equal(second.checks.length,5);assert.equal(second.next,null);assert.equal(new Set([...first.checks,...second.checks].map(c=>c.id)).size,205);
 });
-test('CKD history delete requires admin/CSRF, removes evidence and updates history and reports',async()=>{
+test('CKD history delete permits members and requires CSRF, removes evidence and updates history and reports',async()=>{
  db.prepare('INSERT INTO materials VALUES (?,?,?,?,?,?,?,?,?)').run('DELETE-ITEM','DELETE-MM','Part','Fixture','QA MAKER','V','A1',100,100);
  const w=importCkdWorkbook(db,{models:[{samsung:'BN83-QADELETE',items:'DELETE-ITEM',item:'Part',description:'Fixture',maker:'QA MAKER',moq_text:'100',moq:100}],orders:[{samsung:'BN83-QADELETE',so_no:'1',items:'DELETE-ITEM',selling_code:'DELETE-ITEM',selling_qty:100,so_maker:'QA MAKER',maker:'QA MAKER',vendor:'V',type:'Local'}],missing_moq:0},'Delete QA SO',1);
  const image='data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aOuIAAAAASUVORK5CYII=',pair={workbook_id:w.id,samsung:'BN83-QADELETE',item_code:'DELETE-ITEM',request_id:randomUUID(),images:{samsung:image,item:image}},saved=await request('/api/ckd/pair/save',inspector,'POST',pair),body={workbook_id:w.id,ids:[saved.data.id]};assert.equal(saved.status,201);
- assert.equal((await request('/api/ckd/history/delete',null,'POST',body)).status,401);for(const user of [inspector,viewer])assert.equal((await request('/api/ckd/history/delete',user,'POST',body)).status,403);assert.equal((await request('/api/ckd/history/delete',admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
- assert.equal((await request('/api/ckd/history/delete',admin,'POST',body)).data.deleted,1);const history=(await request('/api/ckd/history?workbook_id='+w.id,viewer)).data;assert.equal(history.count,0);assert.equal(history.max_id,0);assert.equal(history.totals.length,0);assert.equal(history.unsold.length,1);assert.equal((await request('/api/ckd/checks/'+saved.data.id+'/image/item',viewer)).status,404);
+ assert.equal((await request('/api/ckd/history/delete',null,'POST',body)).status,401);for(const user of [inspector,viewer])assert.equal((await request('/api/ckd/history/delete',user,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await request('/api/ckd/history/delete',admin,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);
+ assert.equal((await request('/api/ckd/history/delete',viewer,'POST',body)).data.deleted,1);const history=(await request('/api/ckd/history?workbook_id='+w.id,viewer)).data;assert.equal(history.count,0);assert.equal(history.max_id,0);assert.equal(history.totals.length,0);assert.equal(history.unsold.length,1);assert.equal((await request('/api/ckd/checks/'+saved.data.id+'/image/item',viewer)).status,404);
  assert.equal((await request('/api/ckd/pair/save',inspector,'POST',pair)).status,400);const again=await request('/api/ckd/pair/save',inspector,'POST',{...pair,request_id:randomUUID()});assert.equal(again.status,201);assert.ok(again.data.id>saved.data.id);
 });
 
@@ -461,9 +470,9 @@ test('Holding ITEM name comes from saved code directory even after current MM lo
  r=await request('/api/holding/v2/item-mm?code=PERSIST-BARCODE',inspector);assert.equal(r.data.rows[0].item_name,'Saved component');assert.equal(r.data.rows[0].vendor,'Current maker');
 });
 
-test('Label bulk deletion is admin-only, scoped and preserves newer labels and other modes',async()=>{
+test('Label bulk deletion is available to members, scoped and preserves newer labels and other modes',async()=>{
  const add=db.prepare('INSERT INTO scans(request_id,user_id,barcode,mode) VALUES(?,?,?,?)');const a=Number(add.run(randomUUID(),1,'LABEL-DELETE-A','Label').lastInsertRowid),b=Number(add.run(randomUUID(),1,'LABEL-DELETE-B','Label').lastInsertRowid),hs=Number(add.run(randomUUID(),1,'KEEP-HS','HS').lastInsertRowid),stock=Number(add.run(randomUUID(),1,'KEEP-STOCK','Stock').lastInsertRowid);
- const body={mode:'Label',all:true,through_id:b};assert.equal((await request('/api/scans/delete',viewer,'POST',body)).status,403);assert.equal((await request('/api/scans/delete',admin,'POST',body,{'X-CSRF-Token':'bad'})).status,403);
+ const body={mode:'Label',all:true,through_id:b};assert.equal((await request('/api/scans/delete',viewer,'POST',body,{'X-CSRF-Token':'wrong'})).status,403);assert.equal((await request('/api/scans/delete',admin,'POST',body,{'X-CSRF-Token':'bad'})).status,403);
  const newer=Number(add.run(randomUUID(),1,'NEWER-LABEL','Label').lastInsertRowid);assert.equal((await request('/api/scans/delete',admin,'POST',{mode:'Label',ids:[a,hs]})).status,409);assert(db.prepare('SELECT id FROM scans WHERE id=?').get(a));const r=await request('/api/scans/delete',admin,'POST',body);assert.equal(r.status,200);assert(!db.prepare('SELECT id FROM scans WHERE id=?').get(a));assert(!db.prepare('SELECT id FROM scans WHERE id=?').get(b));for(const id of [hs,stock,newer])assert(db.prepare('SELECT id FROM scans WHERE id=?').get(id));
 });
 

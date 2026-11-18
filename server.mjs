@@ -307,7 +307,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         if(path.endsWith('/save')&&b.images){if(typeof b.images!=='object'||Array.isArray(b.images)||Object.keys(b.images).some(k=>!['samsung','item'].includes(k)))fail(400,'Ảnh CKD không hợp lệ.');for(const slot of ['samsung','item'])if(b.images[slot]){const value=b.images[slot],source=typeof value==='string'?value:value?.source;const parsed={slot,...imageData(source)};if(!parsed.buffer)fail(400,'Missing capture image');if(typeof value==='object'&&value.thumbnail){const thumb=imageData(value.thumbnail);if(thumb.mime!=='image/jpeg'||thumb.buffer.length>65536)fail(400,'Invalid image thumbnail');parsed.thumbnail=thumb.buffer;}images.push(parsed);}}
         try {const result=path.endsWith('/save')?saveCkd(db,b,u.id,images):checkCkd(db,b);return send(res,path.endsWith('/save')&&!result.duplicate?201:200,result);}catch(e){fail(400,e.message);}
       }
-      if(req.method==='POST'&&path==='/api/ckd/history/delete'){adminAccess(u);return send(res,200,deleteCkdHistory(db,await jsonBody(req),u.id));}
+      if(req.method==='POST'&&path==='/api/ckd/history/delete'){return send(res,200,deleteCkdHistory(db,await jsonBody(req),u.id));}
       const ckdImage=/^\/api\/ckd\/checks\/(\d+)\/image\/(samsung|item)$/.exec(path);
       if(req.method==='GET'&&ckdImage){const image=db.prepare('SELECT mime,image FROM ckd_check_images WHERE check_id=? AND slot=?').get(Number(ckdImage[1]),ckdImage[2]);if(!image)fail(404,'Chưa có ảnh đối chiếu.');res.writeHead(200,{'Content-Type':image.mime,'Cache-Control':'no-store'});res.end(image.image);return;}
       if (req.method === 'GET' && ['/api/ckd/history','/api/ckd/export','/api/ckd/report.zip'].includes(path)) {
@@ -446,7 +446,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         return send(res, 200, { scans: rows, next: rows.length === 100 ? rows.at(-1).id : null, mode, ...totals,...(mode==='Stock'?{stock_summary:stockSummary()}:{} ) });
       }
       if(req.method==='POST'&&path==='/api/scans/delete'){
-        adminAccess(u);const b=await jsonBody(req);
+        const b=await jsonBody(req);
         if(!['HS','Stock','Label'].includes(b.mode))fail(400,'Chọn lịch sử HS, Stock hoặc Label cần xóa.');
         const removed=transaction(db,()=>{
           if(b.all===true){if(!Number.isSafeInteger(b.through_id)||b.through_id<1)fail(400,'Thiếu mốc lịch sử cần xóa.');return db.prepare('DELETE FROM scans WHERE mode=? AND id<=?').run(b.mode,b.through_id).changes;}
@@ -480,7 +480,7 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         res.writeHead(200, { 'Content-Type': r.image_type }); return res.end(Buffer.from(r.image));
       }
       if (req.method === 'DELETE' && /^\/api\/scans\/\d+$/.test(path)) {
-        adminAccess(u); const r = db.prepare('DELETE FROM scans WHERE id=?').run(Number(path.split('/')[3]));
+        const r = db.prepare('DELETE FROM scans WHERE id=?').run(Number(path.split('/')[3]));
         if (!r.changes) fail(404, 'Lượt quét không tồn tại.'); return send(res, 200, { ok: true });
       }
       if (req.method === 'GET' && path === '/api/export' && url.searchParams.get('kind')==='holding') {const bytes=holdingReport(db,{},u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename=work-area-holding.xlsx'});return res.end(bytes);}
