@@ -65,3 +65,29 @@
 .menu-link[hidden]{display:none}
 
 .hs-group{padding:20px}.hs-part{margin-top:20px;padding-top:16px;border-top:1px solid var(--border,#e5e7eb)}.hs-part h3{font-size:16px;margin:0 0 8px}.hs-part h3 small{font-weight:400;color:#687983}.hs-choice-rule{font-size:14px;color:#805600}.hs-vendors{display:grid;gap:10px}.hs-vendor{display:flex;align-items:flex-start;gap:10px;padding:14px;border:1px solid #dce4ec;border-radius:16px;cursor:pointer;overflow-wrap:anywhere}.hs-vendor:has(input:checked){border-color:#2459ed;background:#eef4ff}.hs-vendor input{width:20px;height:20px;min-width:20px;margin:2px 0 0;accent-color:#2459ed}.hs-vendor span span,.hs-vendor strong{display:block}.hs-vendor strong{font-size:14px;color:#2459ad;margin-bottom:8px}.hs-code{font-weight:700;margin-bottom:6px}.hs-vendor span span:last-child{white-space:pre-line;font-size:14px;line-height:1.6}.hs-photo{display:block;width:100%;padding:8px;border:1px solid #dce4ec;border-radius:16px;background:#fff;cursor:zoom-in}.hs-photo img{display:block;width:100%;max-height:none;height:auto;object-fit:contain}.hs-photo span{display:block;font-size:13px;color:#527180;padding:8px}.hs-raw{white-space:pre-line;overflow-wrap:anywhere}
+
+/* Compact home welcome, keeping the animated IQC mark and pause control. */
+.quality-workspace{min-height:330px;padding:26px 30px 54px;margin-bottom:22px}
+.quality-workspace .workspace-eyebrow{margin-top:16px}
+.quality-workspace .quality-welcome h1{font-size:34px;margin:8px 0}
+.quality-workspace .quality-copy{margin-top:20px}
+.quality-workspace .quality-copy h2{font-size:21px}
+@media(max-width:700px){
+.quality-workspace{min-height:270px;padding:20px 20px 46px;margin-bottom:20px;border-radius:24px}
+.quality-workspace .workspace-eyebrow,.quality-workspace .quality-caption,.quality-workspace .quality-copy>p{display:none}
+.quality-workspace .quality-welcome h1{font-size:26px;line-height:1.2;letter-spacing:-.8px;margin:14px 0 7px;max-width:none}
+.quality-workspace .workspace-intro{font-size:11px;line-height:1.5}
+.quality-workspace .quality-copy{margin-top:22px;max-width:57%}
+.quality-workspace .quality-copy h2{font-size:18px;line-height:1.3;margin:0}
+.quality-workspace .quality-art{bottom:45px;height:125px;width:40%;right:0}
+.quality-workspace .quality-core{width:78px;height:94px}
+.quality-workspace .quality-core strong{font-size:23px}
+.quality-workspace .quality-ring{width:120px;height:120px}
+.quality-workspace .quality-ring.ring-two{width:156px;height:156px}
+.quality-workspace .quality-orbit{width:138px;height:138px}
+.quality-workspace .quality-chip{font-size:6px;padding:5px 6px}
+.quality-workspace .chip-one,.quality-workspace .chip-three{display:none}
+.quality-workspace .workspace-flow{left:20px;bottom:20px}
+.quality-workspace .quality-motion{width:30px;height:30px;bottom:13px;right:13px}
+}
+@media(max-width:360px){.quality-workspace{padding:18px 16px 44px;min-height:260px}.quality-workspace .quality-welcome h1{font-size:23px}.quality-workspace .quality-copy h2{font-size:17px}.quality-workspace .quality-art{width:38%}.quality-workspace .quality-core{width:70px;height:86px}.quality-workspace .workspace-flow{left:16px}}
