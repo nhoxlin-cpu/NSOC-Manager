@@ -543,7 +543,9 @@ async function renderHubBackup(){
   }catch(error){if(panel.isConnected)panel.innerHTML=`<p role="alert">${escape(error.message)}</p><button class="button" id="backup-retry">Thử lại</button>`;$('#backup-retry')?.addEventListener('click',renderHubBackup);}
 }
 
+let columnOrderObserver;
 function installColumnOrderControls(){
+  if(!columnOrderObserver){columnOrderObserver=new MutationObserver(()=>installColumnOrderControls());columnOrderObserver.observe(document.querySelector('#main'),{childList:true,subtree:true});}
   document.querySelectorAll('#main .table-wrap table').forEach((table,index)=>{
     if(table.dataset.columnOrderReady)return;
     const headers=[...table.querySelectorAll(':scope > thead > tr:first-child > th')];
@@ -552,9 +554,10 @@ function installColumnOrderControls(){
     const key='wa-column-order:'+location.hash.split('?')[0]+':'+(table.className||'table')+':'+index;
     const button=document.createElement('button');button.type='button';button.className='button small column-order-button';button.textContent='Đổi thứ tự cột';
     table.parentElement.parentElement.insertBefore(button,table.parentElement);
-    const apply=order=>{const rows=[...table.rows];rows.forEach(row=>{const cells=[...row.children];order.forEach(i=>{if(cells[i])row.appendChild(cells[i]);});});};
+    const original=new WeakMap();
+    const apply=order=>{[...table.rows].forEach(row=>{if(!original.has(row))original.set(row,[...row.children]);const cells=original.get(row);order.forEach(i=>{if(cells[i])row.appendChild(cells[i]);});});};
     let saved=[];try{saved=JSON.parse(localStorage.getItem(key)||'[]');}catch{}
-    if(saved.length===headers.length&&saved.every(i=>Number.isInteger(i)&&i>=0&&i<headers.length))apply(saved);
+    if(saved.length===headers.length&&new Set(saved).size===headers.length&&saved.every(i=>Number.isInteger(i)&&i>=0&&i<headers.length))apply(saved);
     button.onclick=()=>{const names=[...table.querySelectorAll(':scope > thead > tr:first-child > th')].map((h,i)=>`${i+1}. ${h.textContent.trim()}`);const raw=prompt('Nhập số thứ tự cột, cách nhau bằng dấu phẩy. Ví dụ: 2,1,3,4\n\n'+names.join('\n'));if(raw===null)return;const order=raw.split(',').map(v=>Number(v.trim())-1),valid=order.length===headers.length&&new Set(order).size===headers.length&&order.every(i=>i>=0&&i<headers.length);if(!valid){toast('Thứ tự cột không hợp lệ.');return;}apply(order);try{localStorage.setItem(key,JSON.stringify(order));}catch{}};
   });
 }
