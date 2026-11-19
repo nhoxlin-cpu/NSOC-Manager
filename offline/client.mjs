@@ -62,7 +62,7 @@ class OfflineClient{
    if(this.meta.profile&&!this.meta.active)return {user:null,csrf:null,needsSetup:false};
    const value=await network();if(value.user){this.meta.serverRealm=value.offline_realm||null;this.meta.profile=value.user;this.meta.active=true;this.csrf=value.csrf;await this.persist();}return value;
   }
-  const hsLocal=path==='/scans'&&options.data?.mode==='HS'&&this.meta.active;if(!navigator.onLine&&this.meta.active&&!this.db&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
+  const hsLocal=path==='/scans'&&options.data?.mode==='HS'&&this.meta.active;if(this.meta.active&&!this.db&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
   if(this.meta.hsOnly&&!this.supportsLocal(path,options))return this.onlineWithoutWorkspace(network);
   if(!this.db||!this.meta.active||this.replayError){if(this.replayError)fail(this.notice||'Hàng chờ cần kiểm tra trước khi tiếp tục.',503);return this.onlineWithoutWorkspace(network);}
   if(method==='DELETE'&&/^\/scans\/\d+$/.test(path)){const id=Number(path.split('/').at(-1)),row=this.db.prepare('SELECT mode FROM scans WHERE id=?').get(id);if(!row)fail('Không còn lượt quét.',404);path='/scans/delete';options={method:'POST',data:{mode:row.mode,ids:[id]}};}
@@ -92,7 +92,11 @@ class OfflineClient{
   if(path==='/ckd/history/delete')b.expected=(b.ids||[]).map(id=>({id,request_id:this.db.prepare('SELECT request_id FROM ckd_checks WHERE id=?').get(id)?.request_id}));
   return b;
  }
- apply(op){const result=businessApi(this.db,op.actor||this.meta.profile,op.path,{method:'POST',data:op.body});this.preserveIds(op,result);stampOfflineTime(this.db,op.path,op.body,result,op.at,(op.actor||this.meta.profile).id);return result;}
+ apply(op){const actor=op.actor||this.meta.profile;
+  // Journal actors may be absent from an older base snapshot. Preserve their
+  // identity locally; server replay still authenticates the current account.
+  if(actor?.id&&actor.username&&!this.db.prepare('SELECT id FROM users WHERE id=?').get(actor.id))this.db.prepare('INSERT INTO users(id,username,name,password,role,active) VALUES(?,?,?,?,?,?)').run(actor.id,actor.username,actor.name||actor.username,'OFFLINE-DISABLED',actor.role,1);
+  const result=businessApi(this.db,actor,op.path,{method:'POST',data:op.body});this.preserveIds(op,result);stampOfflineTime(this.db,op.path,op.body,result,op.at,actor.id);return result;}
  preserveIds(op,result){
   const table={'/sorting/records':'sorting_records','/scans':'scans','/ckd/pair/save':'ckd_checks','/holding/v2/receive':'holding_entries','/cutting/scans':'cutting_scans','/materials/lookup':'mm_lookup_saved'}[op.path],key=op.path==='/materials/lookup'?'saved_id':'id',wanted=op.localResult?.[key],actual=result[key];if(!table||!wanted||!actual||wanted===actual)return;
   this.db.exec('SAVEPOINT stable_device_ids; PRAGMA defer_foreign_keys=ON');try{this.db.prepare('UPDATE '+table+' SET id=? WHERE id=?').run(wanted,actual);if(table==='scans')this.db.prepare('UPDATE scan_stock SET scan_id=? WHERE scan_id=?').run(wanted,actual);if(table==='ckd_checks')this.db.prepare('UPDATE ckd_check_images SET check_id=? WHERE check_id=?').run(wanted,actual);if(table==='holding_entries'){this.db.prepare("UPDATE holding_events SET entry_id=?,response=json_set(response,'$.id',?) WHERE entry_id=?").run(wanted,wanted,actual);}this.db.exec('RELEASE SAVEPOINT stable_device_ids');result[key]=wanted;}catch(error){this.db.exec('ROLLBACK TO SAVEPOINT stable_device_ids; RELEASE SAVEPOINT stable_device_ids');throw error;}
