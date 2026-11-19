@@ -558,7 +558,7 @@ function installColumnOrderControls(){
     const apply=order=>{[...table.rows].forEach(row=>{if(!original.has(row))original.set(row,[...row.children]);const cells=original.get(row);order.forEach(i=>{if(cells[i])row.appendChild(cells[i]);});});};
     let saved=[];try{saved=JSON.parse(localStorage.getItem(key)||'[]');}catch{}
     if(saved.length===headers.length&&new Set(saved).size===headers.length&&saved.every(i=>Number.isInteger(i)&&i>=0&&i<headers.length))apply(saved);
-    button.onclick=()=>{const names=[...table.querySelectorAll(':scope > thead > tr:first-child > th')].map((h,i)=>`${i+1}. ${h.textContent.trim()}`);const raw=prompt('Nhập số thứ tự cột, cách nhau bằng dấu phẩy. Ví dụ: 2,1,3,4\n\n'+names.join('\n'));if(raw===null)return;const order=raw.split(',').map(v=>Number(v.trim())-1),valid=order.length===headers.length&&new Set(order).size===headers.length&&order.every(i=>i>=0&&i<headers.length);if(!valid){toast('Thứ tự cột không hợp lệ.');return;}apply(order);try{localStorage.setItem(key,JSON.stringify(order));}catch{}};
+    button.onclick=()=>{const names=headers.map((h,i)=>`${i+1}. ${h.textContent.trim()}`);const raw=prompt('Nhập số thứ tự cột, cách nhau bằng dấu phẩy. Ví dụ: 2,1,3,4\n\n'+names.join('\n'));if(raw===null)return;const order=raw.split(',').map(v=>Number(v.trim())-1),valid=order.length===headers.length&&new Set(order).size===headers.length&&order.every(i=>Number.isInteger(i)&&i>=0&&i<headers.length);if(!valid){toast('Thứ tự cột không hợp lệ.');return;}apply(order);try{localStorage.setItem(key,JSON.stringify(order));}catch{}};
   });
 }
 async function render() {
