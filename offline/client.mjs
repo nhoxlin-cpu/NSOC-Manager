@@ -64,7 +64,7 @@ class OfflineClient{
   }
   const hsLocal=path==='/scans'&&options.data?.mode==='HS'&&this.meta.active;if(this.meta.active&&!this.db&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
   if(this.meta.hsOnly&&!this.supportsLocal(path,options))return this.onlineWithoutWorkspace(network);
-  if(!this.db||!this.meta.active||this.replayError){if(path==='/scans'&&options.data?.mode==='HS')fail('Đăng nhập để lưu HS; hàng chờ đang lỗi cần kiểm tra trước.',503);if(this.replayError)fail(this.notice||'Hàng chờ cần kiểm tra trước khi tiếp tục.',503);return this.onlineWithoutWorkspace(network);}
+  if(!this.db||!this.meta.active||this.replayError){if(this.replayError)fail(this.notice||'Hàng chờ cần kiểm tra trước khi tiếp tục.',503);return this.onlineWithoutWorkspace(network);}
   if(method==='DELETE'&&/^\/scans\/\d+$/.test(path)){const id=Number(path.split('/').at(-1)),row=this.db.prepare('SELECT mode FROM scans WHERE id=?').get(id);if(!row)fail('Không còn lượt quét.',404);path='/scans/delete';options={method:'POST',data:{mode:row.mode,ids:[id]}};}
   const verb=options.method||'GET';
   if(verb==='POST'&&queuePaths.has(path)){
