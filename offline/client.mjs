@@ -62,7 +62,7 @@ class OfflineClient{
    if(this.meta.profile&&!this.meta.active)return {user:null,csrf:null,needsSetup:false};
    const value=await network();if(value.user){this.meta.serverRealm=value.offline_realm||null;this.meta.profile=value.user;this.meta.active=true;this.csrf=value.csrf;await this.persist();}return value;
   }
-  const hsLocal=path==='/scans'&&options.data?.mode==='HS'&&this.meta.active;if(this.meta.active&&!this.db&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
+  const hsLocal=path==='/scans'&&options.data?.mode==='HS'&&this.meta.active;if(!navigator.onLine&&this.meta.active&&!this.db&&hsWorkspacePath(path,options))await this.ensureHsWorkspace();
   if(this.meta.hsOnly&&!this.supportsLocal(path,options))return this.onlineWithoutWorkspace(network);
   if(!this.db||!this.meta.active||this.replayError){if(this.replayError)fail(this.notice||'Hàng chờ cần kiểm tra trước khi tiếp tục.',503);return this.onlineWithoutWorkspace(network);}
   if(method==='DELETE'&&/^\/scans\/\d+$/.test(path)){const id=Number(path.split('/').at(-1)),row=this.db.prepare('SELECT mode FROM scans WHERE id=?').get(id);if(!row)fail('Không còn lượt quét.',404);path='/scans/delete';options={method:'POST',data:{mode:row.mode,ids:[id]}};}
