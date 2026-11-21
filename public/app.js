@@ -1,3 +1,4 @@
+import {renderErrors} from '/error-history.js';
 import {renderSorting} from '/sorting.js';
 import {renderHeatsink} from '/heatsink.js';
 import {renderAppUpdate} from '/app-updates.js';
@@ -128,7 +129,7 @@ function renderNavigation() {
   const keys=state.user ? state.navigation : defaultNavigation;
   $('.bottom-nav').innerHTML=keys.filter(key=>routes.some(r=>r[0]===key)).map(key=>{const route=routes.find(r=>r[0]===key);return `<a href="#${key}" data-nav="${key}" aria-label="${route[2]}" ${state.page===key?'class="active" aria-current="page"':''}>${icon(route[1])}<span>${shortLabels[key]}</span></a>`;}).join('');
 }
-$('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('');
+$('#menu-links').innerHTML = routes.map(([route, symbol, label]) => `<a class="menu-link" href="#${route}">${icon(symbol)}${label}</a>`).join('')+`<a class="menu-link" href="#errors">${icon('ckd')}Lịch sử lỗi</a>`;
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#account?mm-settings">${icon('settings')} Cài đặt</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" href="#downloads">${icon('download')} T\u1ea3i xu\u1ed1ng & Sao l\u01b0u</a>`);
 $('#menu-links').insertAdjacentHTML('beforeend',`<a class="menu-link" id="menu-mm-import" href="#imports" hidden>${icon('folder')} Nhập file dữ liệu</a><a class="menu-link" id="menu-shortcuts" href="#account?shortcuts">${icon('settings')} Ph\u00edm t\u1eaft c\u1ee7a t\u00f4i</a>`);
@@ -505,6 +506,7 @@ function openDataImport(page){
  for(let el=target;el&&el!==$('#main');el=el.parentElement)if(el.tagName==='DETAILS')el.open=true;
  $('#main .page-top')?.insertAdjacentHTML('afterend',`<a class='button small' id='data-import-back' href='#imports'>← Nhập file dữ liệu</a>`);target.scrollIntoView({block:'center'});
 }
+async function errors(){if(!state.user){$('#main').innerHTML=needsLogin('Lịch sử lỗi');return;}await renderErrors({api,state,escape,pageTop,canWrite,toast,detail});}
 async function sorting(){if(!state.user){$('#main').innerHTML=needsLogin('Sorting vendor');return;}await renderSorting({api,state,escape,number,time,icon,field,pageTop,canWrite,toast,detail});}
 async function heatsink(){
  if(!state.user){$('#main').innerHTML=needsLogin('List sub heatsink');return;}
@@ -566,7 +568,7 @@ async function render() {
   const reportMode=new URLSearchParams(location.hash.split('?')[1]||'').get('report');if(page==='scan'&&['HS','Stock','Label'].includes(reportMode))state.mode=reportMode;
   stopCamera(); document.querySelectorAll('dialog[open]').forEach(d => d.close());
   document.querySelectorAll('[data-nav]').forEach(a => { const active = a.dataset.nav === page; a.classList.toggle('active',active); if (active) a.setAttribute('aria-current','page'); else a.removeAttribute('aria-current'); });
-  const route = { sorting,reports:reportHub,imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
+  const route = { errors,sorting,reports:reportHub,imports:dataImports,heatsink,home, account, scan, mm:materials, ckd, holding, assistant, cut:cutting, backup,'offline-app':offlineAppPage,downloads:downloadHub }[page];
   document.title = `${(page==='imports'?'Nhập file dữ liệu':page==='reports'?'Xuất báo cáo':routes.find(r => r[0] === page)?.[2]) || 'Trang chủ'} · Work Area`;
   try { await (route || home)(id); if(id===renderId){openDataImport(page);openDataReport(page);installColumnOrderControls();} } catch(e) { if (id === renderId) $('#main').innerHTML = `<section class="panel">${empty('Chưa mở được chức năng',escape(e.message),'sync')}<a class="button full mt" href="#account">Kiểm tra tài khoản</a></section>`; }
 }

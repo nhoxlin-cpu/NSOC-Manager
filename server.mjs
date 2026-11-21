@@ -1,3 +1,4 @@
+import {saveErrorHistory,listErrorHistory} from './lib/error-history.mjs';
 import {saveSorting,listSorting,sortingReport,sortingImage,changeSorting} from './lib/sorting.mjs';
 import {registrationMode,setRegistrationMode,registerEmployee,pendingRegistrations,reviewRegistration} from './lib/registration.mjs';
 import {listHeatsink,importHeatsink} from './lib/heatsink-data.mjs';
@@ -319,6 +320,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
         res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename="work-area-ckd.xlsx"'});res.end(report.workbookBytes);return;
       }
       const sortingPhoto=/^\/api\/sorting\/image\/([a-zA-Z0-9-]{16,80})$/.exec(path);if(req.method==='GET'&&sortingPhoto){const photo=sortingImage(db,sortingPhoto[1]);res.writeHead(200,{'Content-Type':photo.mime,'Cache-Control':'private, no-store'});res.end(photo.bytes);return;}
+      if(req.method==='GET'&&path==='/api/error-history')return send(res,200,listErrorHistory(db,Number(url.searchParams.get('offset')||0)));
+      if(req.method==='POST'&&path==='/api/error-history'){writeAccess(u);return send(res,201,saveErrorHistory(db,await jsonBody(req,4400000),u.id));}
+      const errorPhoto=/^\/api\/error-history\/(\d+)\/image$/.exec(path);if(req.method==='GET'&&errorPhoto){const image=db.prepare('SELECT image_type,image FROM error_history WHERE id=?').get(Number(errorPhoto[1]));if(!image?.image)fail(404,'Chưa có ảnh.');res.writeHead(200,{'Content-Type':image.image_type,'Cache-Control':'private, no-store'});res.end(image.image);return;}
       if(req.method==='GET'&&path==='/api/sorting/live')return send(res,200,listSorting(db,Object.fromEntries(url.searchParams)));
       if(req.method==='POST'&&path==='/api/sorting/change'){writeAccess(u);return send(res,200,changeSorting(db,await jsonBody(req),u.id));}
       if(req.method==='GET'&&path==='/api/sorting/records')return send(res,200,listSorting(db,Object.fromEntries(url.searchParams)));
