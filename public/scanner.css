@@ -45,3 +45,4 @@
 
 /* Continuous capture never needs a next-code or mode switch button. */
 .phone-scanner #scanner-continuous,.phone-scanner #scanner-next{display:none!important}
+.scanner-pairs{max-height:30vh;overflow:auto;margin:10px 0;display:grid;gap:8px}.scanner-pairs section{display:grid;gap:5px}.scanner-pairs small{color:#fff}.scanner-pairs section>div{padding:8px 12px;border-radius:10px;display:flex;gap:12px;align-items:center}.scanner-pair-ai{background:#174da5;color:#fff}.scanner-pair-mi{background:#7139a4;color:#fff}.scanner-pairs strong{font-size:clamp(18px,5vw,26px);overflow-wrap:anywhere}.scanner-pairs span{font-weight:800}

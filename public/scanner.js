@@ -264,7 +264,7 @@ export class PhoneScanner {
         if(!this.lastImage)throw Error('Chưa chụp được ảnh đối chiếu. Hãy đưa mã vào khung và quét lại.');
         payload.image=this.lastImage;
       }
-      if(this.options.onCode){const result=await this.options.onCode(code,{image:payload.image});this.captured++;const kind=result?.kind||'success';this.paint(kind,result?.message||'Đã điền mã vào mục đã chọn',result?.displayValue||code);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(kind==='error');return;}
+      if(this.options.onCode){const result=await this.options.onCode(code,{image:payload.image});this.captured++;const kind=result?.kind||'success';this.paint(kind,result?.message||'Đã điền mã vào mục đã chọn',result?.displayValue||code);this.showPairs(result?.pairs);this.$('#scanner-repeat').textContent='Đọc lại cùng mã';this.feedback(kind==='error');return;}
       let known=0, online=true;
       let local=0;
       if(this.options.mode!=='HS'){
@@ -311,10 +311,12 @@ export class PhoneScanner {
     if (!this.active) return;
     this.dialog.dataset.state=kind; this.$('#scanner-status').textContent=message;
     if (code) this.$('#scanner-value').textContent=code;
+    this.$('#scanner-pairs')?.remove();
     this.$('#scanner-result-icon').innerHTML=kind === 'success' ? svg('check') : '';
     this.counts();
   }
   counts() { if (this.active) this.$('#scanner-count').textContent=this.options.onCode?`Đã đọc ${this.captured} mã trong lần mở camera này${this.singlePaused?' · Đang tạm dừng':''}`:`Đã lưu ${this.saved} lượt trong lần mở camera này${this.queued ? ` · ${this.queued} chờ đồng bộ` : ''}${this.singlePaused?' · Đang tạm dừng':''}`; }
+  showPairs(pairs){if(!Array.isArray(pairs)||!pairs.length)return;const panel=document.createElement('div');panel.id='scanner-pairs';panel.className='scanner-pairs';for(const p of pairs){const row=document.createElement('section');const meta=document.createElement('small');meta.textContent=`${p.variant===1?'1st':'2nd'} · ${p.model||''}`;row.append(meta);for(const [label,value] of [['AI',p.ai],['MI',p.mi]]){const cell=document.createElement('div');cell.className='scanner-pair-'+label.toLowerCase();const title=document.createElement('span');title.textContent=label;const code=document.createElement('strong');code.textContent=value||'—';cell.append(title,code);row.append(cell);}panel.append(row);}this.$('#scanner-value').after(panel);}
   feedback(duplicate) {
     if (this.vibration) { try { navigator.vibrate?.(duplicate ? [70,50,70] : 45); } catch {} }
     if (!this.sound || !this.audio || this.audio.state === 'closed') return;
