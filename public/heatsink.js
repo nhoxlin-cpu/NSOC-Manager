@@ -1,3 +1,4 @@
+import {renderIcMarking} from './ic-marking.js';
 import {markingMatches} from './heatsink-match.js';
 export function heatsinkVendors(part){
  const codes=String(part.code||'').split(/\r?\n/).map(s=>s.trim()).filter(Boolean);
@@ -8,9 +9,11 @@ export function heatsinkVendors(part){
  return codes.map((code,i)=>({vendor:i+1,code,description:descriptions[i]}));
 }
 export async function renderHeatsink({api,state,escape:e,number:n,icon,button,pageTop,openScanner,toast,detail}){
+ if(new URLSearchParams(location.hash.split('?')[1]||'').get('view')==='marking')return renderIcMarking({api,state,escape:e,pageTop,toast,detail});
  const importView=state.user.role==='admin'&&new URLSearchParams(location.hash.split('?')[1]||'').get('import')==='file';
  const main=document.querySelector('#main');main.innerHTML=`${pageTop(importView?'Nhập List sub heatsink':'List sub heatsink',importView?'Tải file Excel gốc có đầy đủ ảnh':'Sub Heatsink · Heatsink · IC · Model')}<section class='panel' id='heatsink-page' ${importView?'hidden':''}><form id='heatsink-search'><div class='field'><label for='heatsink-q'>Tìm mã hoặc mô tả</label><input id='heatsink-q' maxlength='200' placeholder='Sub, Heatsink, IC, Model…' autocomplete='off'></div><div class='field'><label for='heatsink-model'>Model</label><select id='heatsink-model'><option value=''>Tất cả model</option></select></div><div class='capture-actions'><button class='button primary' type='submit'>${icon('search')} Tìm</button>${button('Quét mã','heatsink-camera','','camera')}</div></form><p id='heatsink-status' role='status' class='muted'>Đang tải danh sách…</p><div id='heatsink-source-note' class='notice' hidden></div><div id='heatsink-results'></div><div id='heatsink-selected' hidden></div><button id='heatsink-more' class='button full mt' hidden>Xem thêm</button></section>${importView?`<section class='panel'><details id='heatsink-import-details'><summary>Tải file Excel gốc lên</summary><p class='muted'>Excel .xlsx, tối đa 200 MB. Đọc tất cả sheet và ảnh nhúng. File mới thay danh sách tra cứu hiện tại; không thay dữ liệu MM hay Holding.</p><form id='heatsink-import'><div class='field'><label for='heatsink-file'>File Excel</label><input id='heatsink-file' type='file' accept='.xlsx' required></div><button class='button primary' type='submit'>Nhập danh sách</button><p role='status' id='heatsink-import-status'></p></form></details></section>`:''}`;
  const root=document.querySelector('#heatsink-page'),$=s=>main.querySelector(s);
+ if(!importView)root.insertAdjacentHTML('afterbegin','<a class="button full mb" href="#heatsink?view=marking">Marking IC · Nhập IC và code</a>');
  if($('#heatsink-file'))$('#heatsink-file').onchange=()=>{const file=$('#heatsink-file').files[0];$('#heatsink-import-status').textContent=file?`${file.name} · ${(file.size/1024/1024).toFixed(1)} MB. Nhấn Nhập danh sách để tải lên server.`:'';};let next=null,version=0,query='',model='',loaded=[];
  function partHTML(g,p,index){
   const variants=heatsinkVendors(p),name=`heatsink-${g.id}-${index}`;

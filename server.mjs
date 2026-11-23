@@ -1,3 +1,4 @@
+import {saveIcMarking,listIcMarking} from './lib/ic-marking.mjs';
 import {saveErrorHistory,listErrorHistory,editErrorHistory,errorHistoryReport} from './lib/error-history.mjs';
 import {saveSorting,listSorting,sortingReport,sortingImage,changeSorting} from './lib/sorting.mjs';
 import {registrationMode,setRegistrationMode,registerEmployee,pendingRegistrations,reviewRegistration} from './lib/registration.mjs';
@@ -322,6 +323,9 @@ export async function createApp({ db = openDatabase(), origin = process.env.APP_
       const sortingPhoto=/^\/api\/sorting\/image\/([a-zA-Z0-9-]{16,80})$/.exec(path);if(req.method==='GET'&&sortingPhoto){const photo=sortingImage(db,sortingPhoto[1]);res.writeHead(200,{'Content-Type':photo.mime,'Cache-Control':'private, no-store'});res.end(photo.bytes);return;}
       if(req.method==='POST'&&path==='/api/error-history/edit'){writeAccess(u);return send(res,200,editErrorHistory(db,await jsonBody(req,100000),u.id));}
       if(req.method==='GET'&&path==='/api/error-history/export'){const bytes=errorHistoryReport(db,u);res.writeHead(200,{'Content-Type':'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet','Content-Disposition':'attachment; filename=WorkArea-lich-su-loi.xlsx'});return res.end(bytes);}
+      if(req.method==='GET'&&path==='/api/ic-markings')return send(res,200,listIcMarking(db,url.searchParams.get('q')||'',Number(url.searchParams.get('offset')||0)));
+      if(req.method==='POST'&&path==='/api/ic-markings'){writeAccess(u);return send(res,201,saveIcMarking(db,await jsonBody(req,4400000),u.id));}
+      const icPhoto=/^\/api\/ic-markings\/(\d+)\/image$/.exec(path);if(req.method==='GET'&&icPhoto){const r=db.prepare('SELECT mime,image FROM ic_markings WHERE id=?').get(Number(icPhoto[1]));if(!r?.image)fail(404,'Chưa có ảnh.');res.writeHead(200,{'Content-Type':r.mime,'Cache-Control':'private, no-store'});res.end(r.image);return;}
       if(req.method==='GET'&&path==='/api/error-history')return send(res,200,listErrorHistory(db,Number(url.searchParams.get('offset')||0)));
       if(req.method==='POST'&&path==='/api/error-history'){writeAccess(u);return send(res,201,saveErrorHistory(db,await jsonBody(req,4400000),u.id));}
       const errorPhoto=/^\/api\/error-history\/(\d+)\/image$/.exec(path);if(req.method==='GET'&&errorPhoto){const image=db.prepare('SELECT image_type,image FROM error_history WHERE id=?').get(Number(errorPhoto[1]));if(!image?.image)fail(404,'Chưa có ảnh.');res.writeHead(200,{'Content-Type':image.image_type,'Cache-Control':'private, no-store'});res.end(image.image);return;}
